@@ -67,9 +67,10 @@ export function CreateCompetitionForm() {
 
       const generateScrambles = (document.getElementById('generate-scrambles') as HTMLInputElement)?.checked ?? true;
       const allowSpectators = (document.getElementById('allow-spectators') as HTMLInputElement)?.checked ?? false;
+      const requireVerified = (document.getElementById('require-verified') as HTMLInputElement)?.checked ?? false;
       const { data: comp, error: compError } = await supabase
         .from('competitions')
-        .insert({ name: data.name, description: data.description || '', created_by: user.id, generate_scrambles: generateScrambles, allow_spectators: allowSpectators })
+        .insert({ name: data.name, description: data.description || '', created_by: user.id, generate_scrambles: generateScrambles, allow_spectators: allowSpectators, require_verified_solves: requireVerified })
         .select().single();
 
       if (compError) throw compError;
@@ -158,6 +159,16 @@ export function CreateCompetitionForm() {
                 <p className="text-xs text-muted-foreground">Let non-registered users view scrambles and leaderboards without competing.</p>
               </div>
               <Switch id="allow-spectators" />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border/50 p-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="require-verified" className="flex items-center gap-2 text-sm font-medium">
+                  <Trophy className="h-4 w-4 text-cube-red" />
+                  Require Verified Solves
+                </Label>
+                <p className="text-xs text-muted-foreground">Competitors must upload an unlisted YouTube video showing all solves. Only verified solves qualify for advancement.</p>
+              </div>
+              <Switch id="require-verified" />
             </div>
           </CardContent>
         </Card>

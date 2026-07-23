@@ -13,7 +13,7 @@ import { RoundLeaderboard } from '@/components/competitions/leaderboard';
 import { CubeTimer } from '@/components/competitions/cube-timer';
 import { submitTimesAction } from '@/actions/submitTimes';
 import { toast } from 'sonner';
-import { Clock, Lock, Send, AlertTriangle, CuboidIcon as CubeIcon, Trophy, Timer, ShuffleIcon } from 'lucide-react';
+import { Clock, Lock, Send, AlertTriangle, CuboidIcon as CubeIcon, Trophy, Timer, ShuffleIcon, Video, CheckCircle2 } from 'lucide-react';
 
 type ScrambleEntry = { id: string; scramble_number: number; scramble: string };
 type AccessState = 'loading' | 'granted' | 'blocked_registration' | 'blocked_qualification' | 'blocked_round_locked';
@@ -29,6 +29,8 @@ export default function RoundPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [accessState, setAccessState] = useState<AccessState>('loading');
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoSubmitted, setVideoSubmitted] = useState(false);
   const submittingRef = useRef(false);
   const supabase = createClient();
 
@@ -75,6 +77,18 @@ export default function RoundPage() {
     }
     const { data: sc } = await supabase.from('scrambles').select('*').eq('round_id', r.id).order('scramble_number');
     setScrambles(sc ?? []);
+
+    // Load existing video submission if req
+    if (comp?.require_verified_solves && user) {
+      const { data: videoComp } = await supabase.from('competitors').select('id').eq('competition_id', params.id).eq('user_id', user.id).maybeSingle();
+      if (videoComp) {
+        const { data: sub } = await supabase.from('round_submissions').select('*').eq('round_id', r.id).eq('competitor_id', videoComp.id).maybeSingle();
+        if (sub) {
+          setVideoUrl(sub.video_url || '');
+          setVideoSubmitted(!!sub.video_url);
+        }
+      }
+    }
     setLoading(false);
   }; run(); }, [params.id, params.event, params.n]);
 
@@ -96,6 +110,22 @@ export default function RoundPage() {
       solves.push({solve_number:i,time_ms:Math.round(s*1000),penalty:p});
     }
     if (solves.length===0) { toast.error('Enter at least one time'); setSubmitting(false);submittingRef.current=false; return; }
+
+    // Save video URL if required
+    if (competition?.require_verified_solves && videoUrl.trim()) {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: comp } = await supabase.from('competitors').select('id').eq('competition_id',params.id).eq('user_id',user!.id).single();
+      if (comp) {
+        await supabase.from('round_submissions').upsert({
+          round_id: round.id,
+          competitor_id: comp.id,
+          video_url: videoUrl.trim(),
+          verification_status: 'pending',
+        }, { onConflict: 'round_id,competitor_id' });
+        setVideoSubmitted(true);
+      }
+    }
+
     try {
       const r = await submitTimesAction(round.id, params.id, solves);
       if (!r.success) { toast.error(r.error); return; }
@@ -194,6 +224,37 @@ export default function RoundPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               {Array.from({length:solveCount},(_,i)=>i+1).map(sn=><div key={sn} className="flex items-end gap-2"><div className="flex-1 space-y-1"><label className="text-xs font-medium text-text-secondary">Solve {sn}</label><Input type="text" placeholder="12.34 or DNF" value={times[sn]??''} onChange={e=>setTimes(p=>({...p,[sn]:e.target.value}))} className="h-10 font-mono"/></div><div className="w-20"><Select value={penalties[sn]??'none'} onValueChange={v=>setPenalties(p=>({...p,[sn]:v??'none'}))}><SelectTrigger className="h-10"><SelectValue placeholder="—"/></SelectTrigger><SelectContent><SelectItem value="none">—</SelectItem><SelectItem value="+2">+2</SelectItem><SelectItem value="DNF">DNF</SelectItem></SelectContent></Select></div></div>)}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Video submission — required for verified solves */}
+      {accessState==='granted'&&round?.status==='active'&&competition?.require_verified_solves&&(
+        <Card className="border-border/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2"><Video className="h-4 w-4 text-cube-red"/>Video Verification</CardTitle>
+            <CardDescription>Upload an unlisted YouTube video showing all {solveCount} solves for this round. Only verified solves qualify for advancement.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <Input
+                  type="url"
+                  placeholder="https://youtu.be/…"
+                  value={videoUrl}
+                  onChange={e => setVideoUrl(e.target.value)}
+                  className="h-10 font-mono"
+                />
+              </div>
+              {videoSubmitted && (
+                <Badge variant="secondary" className="gap-1 shrink-0">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-cube-green" /> Submitted
+                </Badge>
+              )}
+            </div>
+            {videoSubmitted && !videoUrl && (
+              <p className="mt-2 text-xs text-text-secondary">Previous video saved. Submit again to update.</p>
+            )}
           </CardContent>
         </Card>
       )}

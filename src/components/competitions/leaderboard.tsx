@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { calculateResult, formatTime } from '@/lib/wca-events';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { CuboidIcon as CubeIcon, Trophy, Medal, Award, Radio } from 'lucide-react';
+import { CuboidIcon as CubeIcon, Trophy, Medal, Award, Radio, Clock, CheckCircle2, XCircle } from 'lucide-react';
 
 interface Props { roundId:string;eventKey:string;format:'average'|'mean';solveCount:number }
 
@@ -15,6 +15,7 @@ export function RoundLeaderboard({ roundId,eventKey,format,solveCount }:Props) {
   const [solves,setSolves] = useState<LeaderboardRow[]>([]);
   const [loading,setLoading] = useState(true);
   const [live,setLive] = useState(false);
+  const [verificationMap,setVerificationMap] = useState<Map<string,string>|null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -28,6 +29,12 @@ export function RoundLeaderboard({ roundId,eventKey,format,solveCount }:Props) {
     for(const[cId,s] of g){rows.push({competitor_id:cId,...m.get(cId)!,solves:s})}
     rows.sort((a,b)=>{const ra=calculateResult(a.solves,format);const rb=calculateResult(b.solves,format);if(ra==='DNF'&&rb==='DNF')return 0;if(ra==='DNF')return 1;if(rb==='DNF')return -1;if(ra===null)return 1;if(rb===null)return -1;return(ra as number)-(rb as number)});
     setSolves(rows);setLoading(false);
+
+    // Fetch verification status
+    const{data:subs}=await supabase.from('round_submissions').select('competitor_id,verification_status').eq('round_id',roundId);
+    const vm=new Map<string,string>();
+    for(const s of(subs??[])){if(s.verification_status!=='none'&&s.verification_status!=='verified'||s.verification_status==='verified')vm.set(s.competitor_id,s.verification_status);}
+    setVerificationMap(vm);
   }, [roundId, format]);
 
   // Initial fetch
@@ -88,7 +95,18 @@ export function RoundLeaderboard({ roundId,eventKey,format,solveCount }:Props) {
           <TableCell className="font-mono text-sm font-bold">
             {idx<3?<span className={`inline-flex items-center justify-center gap-1 rounded-md border px-2 py-0.5 text-xs ${topColors[idx]}`}>{topIcons[idx]}{topLabels[idx]}</span>:<span className="text-text-tertiary">{idx+1}</span>}
           </TableCell>
-          <TableCell className="font-medium">{row.display_name||row.username}</TableCell>
+          <TableCell className="font-medium">
+            <div className="flex items-center gap-2">
+              <span>{row.display_name||row.username}</span>
+              {verificationMap?.has(row.competitor_id) && (
+                verificationMap.get(row.competitor_id) === 'verified'
+                  ? <CheckCircle2 className="h-3.5 w-3.5 text-cube-green shrink-0" aria-label="Verified" />
+                  : verificationMap.get(row.competitor_id) === 'rejected'
+                    ? <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" aria-label="Rejected" />
+                    : <Clock className="h-3.5 w-3.5 text-cube-yellow shrink-0" aria-label="Pending verification" />
+              )}
+            </div>
+          </TableCell>
           {Array.from({length:solveCount},(_,i)=><TableCell key={i} className="text-center font-mono text-xs">{i<row.solves.length?<span className={row.solves[i]===null?'text-destructive':''}>{formatTime(row.solves[i])}</span>:<span className="text-text-tertiary/30">—</span>}</TableCell>)}
           <TableCell className="text-right font-mono text-sm font-bold">{r===null?<span className="text-text-tertiary/30">—</span>:r==='DNF'?<span className="text-destructive">DNF</span>:formatTime(r)}</TableCell>
         </TableRow>})}

@@ -75,6 +75,14 @@ export async function calculateAdvancementAction(roundId: string): Promise<Advan
     };
   }
 
+  // Check if competition requires verified solves
+  const { data: compFull } = await supabase
+    .from('competitions')
+    .select('require_verified_solves')
+    .eq('id', round.competition_event.competition_id)
+    .single();
+  const needsVerification = compFull?.require_verified_solves === true;
+
   // Count registered competitors
   const { count: registeredCount } = await supabase
     .from('competitors')
@@ -126,10 +134,26 @@ export async function calculateAdvancementAction(roundId: string): Promise<Advan
     if (res === 'DNF') dnfCount++;
   }
 
+  // If verification required, filter to only verified competitors
+  const verifiedCompetitorIds = new Set<string>();
+  if (needsVerification) {
+    const { data: verifiedSubs } = await supabase
+      .from('round_submissions')
+      .select('competitor_id')
+      .eq('round_id', roundId)
+      .eq('verification_status', 'verified');
+    for (const vs of (verifiedSubs ?? [])) {
+      verifiedCompetitorIds.add(vs.competitor_id);
+    }
+  }
+
   // Filter to only competitors with valid results
   const validCompetitors = sorted.filter(c => {
     const res = calculateResult(c.times, format);
-    return res !== null && res !== 'DNF';
+    if (res === null || res === 'DNF') return false;
+    // If verification is required, must be verified
+    if (needsVerification && !verifiedCompetitorIds.has(c.competitor_id)) return false;
+    return true;
   });
 
   if (validCompetitors.length === 0) {
