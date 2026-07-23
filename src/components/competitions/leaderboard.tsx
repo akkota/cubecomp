@@ -208,7 +208,7 @@ export function RoundLeaderboard({ roundId, format, solveCount }: Props) {
       )}
       <Table>
         <TableHeader>
-          <TableRow className="border-border/30 hover:bg-transparent">
+          <TableRow className="border-border hover:bg-transparent">
             <TableHead className="w-10 text-xs uppercase tracking-wider text-text-tertiary">
               #
             </TableHead>
@@ -238,7 +238,7 @@ export function RoundLeaderboard({ roundId, format, solveCount }: Props) {
             return (
               <TableRow
                 key={row.competitor_id}
-                className={`${idx < 3 ? "bg-surface-hover/30 border-border/30" : "border-border/30"} transition-colors duration-300`}
+                className={`${idx < 3 ? "bg-muted border-border" : "border-border"} transition-colors duration-300`}
               >
                 <TableCell className="font-mono text-sm font-bold">
                   {idx < 3 ? (

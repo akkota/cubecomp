@@ -296,7 +296,7 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded, onStateChang
   const border = () =>
     state === 'inspection' ? 'border-cube-green/30' :
     state === 'running' ? 'border-cube-blue/30' :
-    state === 'stopped' ? 'border-border/50' : 'border-border/20';
+    state === 'stopped' ? 'border-border' : 'border-border';
 
   const bg = () =>
     state === 'stopped' ? 'bg-surface-hover/50' :
@@ -305,7 +305,7 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded, onStateChang
 
   if (isLastSolve) {
     return (
-      <div className="rounded-xl border border-dashed border-border/30 bg-surface/20 p-6 text-center">
+      <div className="rounded-xl border border-dashed border-border bg-surface/20 p-6 text-center">
         <TimerIcon className="mx-auto mb-2 h-6 w-6 text-text-tertiary/40" />
         <p className="text-sm text-text-secondary">All {solveCount} solves recorded. Submit your times below.</p>
       </div>
@@ -387,7 +387,7 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded, onStateChang
               onClick={togglePlus2}
               className={`h-7 cursor-pointer text-xs gap-1 ${
                 penalty === '+2'
-                  ? 'bg-cube-orange text-white hover:bg-cube-orange/90'
+                  ? 'bg-cube-orange text-primary-foreground hover:bg-cube-orange/90'
                   : 'text-cube-orange hover:bg-cube-orange/15 hover:text-cube-orange'
               }`}
             >
@@ -400,7 +400,7 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded, onStateChang
               onClick={toggleDNF}
               className={`h-7 cursor-pointer text-xs gap-1 ${
                 penalty === 'DNF'
-                  ? 'bg-destructive text-white hover:bg-destructive/90'
+                  ? 'bg-destructive text-primary-foreground hover:bg-destructive/90'
                   : 'text-destructive hover:bg-destructive/15 hover:text-destructive'
               }`}
             >

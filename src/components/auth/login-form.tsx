@@ -28,7 +28,7 @@ export function LoginForm({ redirectTo = '/dashboard' }: Props) {
   };
 
   return (
-    <Card className="w-full max-w-md border-border/30 shadow-md">
+    <Card className="w-full max-w-md shadow-md">
       <CardHeader className="pb-4 text-center">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-cube-blue/10">
           <LogIn className="h-6 w-6 text-cube-blue" />

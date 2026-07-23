@@ -520,7 +520,7 @@ export default function CompetitionAdminPage() {
 
   return (
     <div className="space-y-8">
-      <div className="rounded-xl border border-border/30 bg-surface p-6 sm:p-8">
+      <div className="rounded-xl border border-border bg-surface p-6 sm:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-cube-orange/10 p-2">
@@ -608,8 +608,8 @@ export default function CompetitionAdminPage() {
               const ers = grf(ce.id);
               const sc = ei?.solveCount ?? 5;
               return (
-                <Card key={ce.id} className="border-border/30 overflow-hidden">
-                  <CardHeader className="border-b border-border/30 bg-surface-hover/20 pb-3">
+                <Card key={ce.id} className="overflow-hidden">
+                  <CardHeader className="border-b border-border bg-muted pb-3">
                     <CardTitle className="text-lg flex items-center gap-2">
                       {ei?.icon} {ei?.name}
                       <Badge variant="outline" className="ml-auto text-xs">
@@ -866,7 +866,7 @@ export default function CompetitionAdminPage() {
 
         {/* ═══════════════ SETTINGS TAB ═══════════════ */}
         <TabsContent value="settings">
-          <Card className="border-border/30">
+          <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 {editVisibility === "private" ? (
@@ -890,7 +890,7 @@ export default function CompetitionAdminPage() {
                   className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
                     editVisibility === "public"
                       ? "border-cube-blue/40 bg-cube-blue/10 text-foreground"
-                      : "border-border/50 text-muted-foreground hover:bg-accent/40"
+                      : "border-border text-muted-foreground hover:bg-accent/40"
                   }`}
                 >
                   <Globe className="h-4 w-4" /> Public
@@ -901,7 +901,7 @@ export default function CompetitionAdminPage() {
                   className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
                     editVisibility === "private"
                       ? "border-cube-orange/40 bg-cube-orange/10 text-foreground"
-                      : "border-border/50 text-muted-foreground hover:bg-accent/40"
+                      : "border-border text-muted-foreground hover:bg-accent/40"
                   }`}
                 >
                   <Lock className="h-4 w-4" /> Private
@@ -947,7 +947,7 @@ export default function CompetitionAdminPage() {
 
         {/* ═══════════════ ADMINS TAB ═══════════════ */}
         <TabsContent value="admins">
-          <Card className="border-border/30">
+          <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <UserCheck className="h-5 w-5 text-cube-green" /> Competition
@@ -965,7 +965,7 @@ export default function CompetitionAdminPage() {
                   {admins.map((a) => (
                     <li
                       key={a.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-border/35 bg-surface-hover/10 px-4 py-3.5 sm:px-5"
+                      className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted px-4 py-3.5 sm:px-5"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cube-green/10">
@@ -1018,7 +1018,7 @@ export default function CompetitionAdminPage() {
                         .map((r) => (
                           <li
                             key={r.id}
-                            className="flex items-center justify-between gap-3 rounded-xl border border-border/35 bg-surface-hover/10 px-4 py-3 sm:px-5"
+                            className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted px-4 py-3 sm:px-5"
                           >
                             <span className="truncate text-sm font-medium">
                               {r.display_name || r.username}
@@ -1052,7 +1052,7 @@ export default function CompetitionAdminPage() {
         {/* ═══════════════ VERIFICATION QUEUE TAB ═══════════════ */}
         {competition.require_verified_solves && (
           <TabsContent value="verification">
-            <Card className="border-border/30">
+            <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Video className="h-5 w-5 text-cube-red" /> Verification Queue

@@ -189,7 +189,7 @@ export default function ProfilePage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       {/* Header */}
-      <div className="rounded-xl border border-border/30 bg-surface p-6 sm:p-8">
+      <div className="rounded-xl border border-border bg-surface p-6 sm:p-8">
         <div className="flex items-center gap-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-cube-blue/10">
             <User className="h-7 w-7 text-cube-blue" />
@@ -218,7 +218,7 @@ export default function ProfilePage() {
         {/* Personal Bests */}
         <TabsContent value="pbs">
           {pbs.length === 0 ? (
-            <Card className="border-dashed border-border/30">
+            <Card className="border-dashed">
               <CardContent className="flex flex-col items-center gap-4 py-12">
                 <Trophy className="h-10 w-10 text-text-tertiary/30" />
                 <p className="text-sm text-text-secondary">No solves recorded yet. Compete in a competition to see your stats here!</p>
@@ -227,7 +227,7 @@ export default function ProfilePage() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               {pbs.map(pb => (
-                <Card key={pb.event_key} className="border-border/30">
+                <Card key={pb.event_key}>
                   <CardHeader className="pb-2">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <span className="text-xl">{pb.event_icon}</span> {pb.event_name}
@@ -260,20 +260,20 @@ export default function ProfilePage() {
         {/* Solve History */}
         <TabsContent value="history">
           {history.length === 0 ? (
-            <Card className="border-dashed border-border/30">
+            <Card className="border-dashed">
               <CardContent className="flex flex-col items-center gap-4 py-12">
                 <History className="h-10 w-10 text-text-tertiary/30" />
                 <p className="text-sm text-text-secondary">No solves yet.</p>
               </CardContent>
             </Card>
           ) : (
-            <Card className="border-border/30">
+            <Card>
               <CardContent className="p-3 sm:p-4">
                 <ul className="flex flex-col gap-2">
                   {history.slice(0, 50).map(s => (
                     <li
                       key={s.id}
-                      className="flex items-center justify-between gap-4 rounded-xl border border-border/35 bg-surface-hover/10 px-4 py-3.5 transition-colors hover:border-border/55 hover:bg-surface-hover/30 sm:px-5"
+                      className="flex items-center justify-between gap-4 rounded-xl border border-border bg-muted px-4 py-3.5 transition-colors hover:border-border hover:bg-muted sm:px-5"
                     >
                       <div className="min-w-0 flex-1 space-y-1">
                         <p className="truncate text-sm font-semibold tracking-tight">
@@ -303,7 +303,7 @@ export default function ProfilePage() {
         {/* Settings */}
         <TabsContent value="settings">
           <div className="space-y-6">
-            <Card className="border-border/30">
+            <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2"><User className="h-5 w-5 text-cube-blue" /> Profile Info</CardTitle>
                 <CardDescription>Your public display information.</CardDescription>
@@ -322,27 +322,27 @@ export default function ProfilePage() {
               </CardContent>
             </Card>
 
-            <Card className="border-border/30">
+            <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2"><Bell className="h-5 w-5 text-cube-green" /> Notifications</CardTitle>
                 <CardDescription>Choose which events you want to be notified about. (Email delivery requires Edge Functions setup.)</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center justify-between rounded-lg border border-border/50 p-4">
+                <div className="flex items-center justify-between rounded-lg border border-border p-4">
                   <div>
                     <p className="text-sm font-medium">Round starts</p>
                     <p className="text-xs text-text-secondary">When a new round opens in a competition you&apos;re registered for</p>
                   </div>
                   <Switch checked={notifyRoundStart} onCheckedChange={setNotifyRoundStart} />
                 </div>
-                <div className="flex items-center justify-between rounded-lg border border-border/50 p-4">
+                <div className="flex items-center justify-between rounded-lg border border-border p-4">
                   <div>
                     <p className="text-sm font-medium">Advancement results</p>
                     <p className="text-xs text-text-secondary">When you qualify (or don&apos;t) for the next round</p>
                   </div>
                   <Switch checked={notifyAdvancement} onCheckedChange={setNotifyAdvancement} />
                 </div>
-                <div className="flex items-center justify-between rounded-lg border border-border/50 p-4">
+                <div className="flex items-center justify-between rounded-lg border border-border p-4">
                   <div>
                     <p className="text-sm font-medium">Personal best beaten</p>
                     <p className="text-xs text-text-secondary">When someone (or you) beats your personal best time</p>

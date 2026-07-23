@@ -319,18 +319,18 @@ export default function RoundPage() {
 
       {/* Scrambles */}
       {accessState==='granted'&&competition?.generate_scrambles!==false&&scrambles.length>0&&(
-        <Card className="border-border/30">
+        <Card>
           <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><CubeIcon className="h-4 w-4 text-cube-blue"/>Scrambles</CardTitle></CardHeader>
           <CardContent>
             <div className="grid gap-2 sm:grid-cols-2">
-              {scrambles.map(s=><div key={s.id} className="flex items-start gap-2.5 rounded-lg border border-border/40 bg-surface-hover/30 p-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-cube-blue/10 text-xs font-bold text-cube-blue">{s.scramble_number}</span><code className="font-mono text-xs leading-relaxed break-all">{s.scramble}</code></div>)}
+              {scrambles.map(s=><div key={s.id} className="flex items-start gap-2.5 rounded-lg border border-border bg-muted p-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-cube-blue/10 text-xs font-bold text-cube-blue">{s.scramble_number}</span><code className="font-mono text-xs leading-relaxed break-all">{s.scramble}</code></div>)}
             </div>
           </CardContent>
         </Card>
       )}
       {/* Times-only mode notice */}
       {accessState==='granted'&&competition?.generate_scrambles===false&&(
-        <Card className="border-border/30 border-dashed">
+        <Card className="border-dashed">
           <CardContent className="flex items-center gap-3 py-4">
             <ShuffleIcon className="h-5 w-5 text-text-tertiary" />
             <div>
@@ -343,7 +343,7 @@ export default function RoundPage() {
 
       {/* Already submitted notice */}
       {accessState==='granted'&&round?.status==='active'&&alreadySubmitted&&(
-        <Card className="border-border/30 border-dashed">
+        <Card className="border-dashed">
           <CardContent className="flex items-center gap-3 py-4">
             <CheckCircle2 className="h-5 w-5 text-cube-green" />
             <div>
@@ -364,7 +364,7 @@ export default function RoundPage() {
         {/* Mode toggle: Timer vs Manual */}
         {accessState==='granted'&&round?.status==='active'&&!alreadySubmitted&&(
           <div className="flex items-center gap-2">
-            <div className="flex rounded-lg border border-border/30 p-0.5 bg-surface-hover/30">
+            <div className="flex rounded-lg border border-border p-0.5 bg-muted">
               <button
                 type="button"
                 onClick={() => {
@@ -405,7 +405,7 @@ export default function RoundPage() {
 
         {/* Time Entry */}
         {accessState==='granted'&&round?.status==='active'&&(
-          <Card className={alreadySubmitted ? 'border-cube-green/30 bg-cube-green/5' : 'border-border/30'}>
+          <Card className={alreadySubmitted ? 'border-cube-green/30 bg-cube-green/5' : 'border-border'}>
             <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Timer className="h-4 w-4 text-cube-green"/>{alreadySubmitted ? 'Submitted Times' : useTimer ? 'Review & Submit Times' : 'Enter Times'}</CardTitle></CardHeader>
             <CardContent>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -489,7 +489,7 @@ export default function RoundPage() {
 
       {/* Video submission — required for verified solves */}
       {accessState==='granted'&&round?.status==='active'&&!alreadySubmitted&&competition?.require_verified_solves&&(
-        <Card className="border-border/30">
+        <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2"><Video className="h-4 w-4 text-cube-red"/>Video Verification</CardTitle>
             <CardDescription>Upload an unlisted YouTube video showing all {solveCount} solves for this round. Only verified solves qualify for advancement.</CardDescription>
@@ -520,7 +520,7 @@ export default function RoundPage() {
       </form>
 
       {/* Leaderboard */}
-      <Card className="border-border/30">
+      <Card>
         <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Trophy className="h-4 w-4 text-cube-yellow"/>Leaderboard</CardTitle></CardHeader>
         <CardContent><RoundLeaderboard roundId={round.id} eventKey={params.event} format={roundFormat} solveCount={solveCount}/></CardContent>
       </Card>

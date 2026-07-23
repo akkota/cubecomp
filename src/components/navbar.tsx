@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { ThemePicker } from '@/components/theme/theme-picker';
 import { createClient } from '@/lib/supabase/client';
-import { Menu, X, Sun, Moon } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 
 function CubeLogo({ className = 'h-7 w-7' }: { className?: string }) {
   return (
@@ -23,34 +24,6 @@ function CubeLogo({ className = 'h-7 w-7' }: { className?: string }) {
         <line x1="16" y1="17" x2="30" y2="17" stroke="currentColor" strokeWidth="0.5" opacity="0.6"/>
       </g>
     </svg>
-  );
-}
-
-function ThemeToggle() {
-  const [dark, setDark] = useState(true);
-
-  useEffect(() => {
-    const stored = localStorage.getItem('theme');
-    const isDark = stored === null ? true : stored === 'dark';
-    setDark(isDark);
-    document.documentElement.classList.toggle('dark', isDark);
-  }, []);
-
-  const toggle = () => {
-    const next = !dark;
-    setDark(next);
-    document.documentElement.classList.toggle('dark', next);
-    localStorage.setItem('theme', next ? 'dark' : 'light');
-  };
-
-  return (
-    <button
-      onClick={toggle}
-      className="rounded-md p-2 text-text-secondary hover:text-foreground hover:bg-surface-hover transition-colors"
-      aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-    >
-      {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-    </button>
   );
 }
 
@@ -82,7 +55,7 @@ export function Navbar() {
     }`;
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-xl">
+    <header className="sticky top-0 z-50 w-full border-b border-border bg-navbar/95 backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-[1200px] items-center justify-between px-4 sm:px-6">
         <Link href="/" className="group flex items-center gap-2.5 shrink-0" onClick={() => setMobileOpen(false)}>
           <CubeLogo className="h-7 w-7 transition-transform duration-300 group-hover:scale-110" />
@@ -102,7 +75,7 @@ export function Navbar() {
             Dashboard
             {pathname === '/dashboard' && <span className="absolute -bottom-[18px] left-1/2 -translate-x-1/2 h-[2px] w-8 rounded-full bg-cube-blue" />}
           </Link>}
-          <ThemeToggle />
+          <ThemePicker />
           {!loading && (user ? (
             <div className="flex items-center gap-3">
               <Link href="/profile">
@@ -120,7 +93,7 @@ export function Navbar() {
 
         {/* Mobile toggle */}
         <div className="flex items-center gap-1 md:hidden">
-          <ThemeToggle />
+          <ThemePicker />
           <button className="p-2 text-text-secondary" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle menu">
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -128,13 +101,13 @@ export function Navbar() {
       </div>
 
       {mobileOpen && (
-        <div className="md:hidden border-t border-border/40 bg-surface/95 backdrop-blur-xl p-4 space-y-1">
+        <div className="md:hidden border-t border-border bg-navbar/98 backdrop-blur-xl p-4 space-y-1">
           <Link href="/" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Competitions</Link>
           {user && <Link href="/dashboard" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Dashboard</Link>}
           {user && <Link href="/profile" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Profile</Link>}
           {user ? (
             <>
-              <div className="border-t border-border/40 my-2" />
+              <div className="border-t border-border my-2" />
               <span className="block px-3 py-1 text-xs text-text-secondary">{user.email}</span>
               <button onClick={handleSignOut} className="block w-full rounded-md px-3 py-2 text-left text-sm font-medium text-destructive hover:bg-destructive/10">Sign Out</button>
             </>

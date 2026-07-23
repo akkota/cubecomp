@@ -29,7 +29,7 @@ function CompetitionList({
 }) {
   if (list.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/40 bg-surface-hover/10 px-4 py-12">
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border bg-muted px-4 py-12">
         <CubeIcon className="h-8 w-8 text-text-tertiary/30" />
         <p className="text-sm text-text-secondary">{emptyMsg}</p>
         {emptyAction}
@@ -41,7 +41,7 @@ function CompetitionList({
     <ul className="flex flex-col gap-2.5 sm:gap-3">
       {list.map(c => (
         <li key={c.id}>
-          <div className="group flex flex-col gap-3 rounded-xl border border-border/40 bg-surface-hover/10 px-4 py-4 transition-all duration-200 hover:border-cube-blue/25 hover:bg-surface-hover/35 hover:shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5 sm:py-4">
+          <div className="group flex flex-col gap-3 rounded-xl border border-border bg-surface px-4 py-4 transition-all duration-200 hover:bg-surface-hover hover:shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5 sm:py-4">
             <Link href={`/competitions/${c.id}`} className="min-w-0 flex-1 space-y-1.5">
               <h3 className="truncate text-base font-semibold tracking-tight text-foreground transition-colors group-hover:text-cube-blue">
                 {c.name}
@@ -167,12 +167,12 @@ export default function DashboardPage() {
 
   if (loading) return (
     <div className="space-y-8">
-      <div className="rounded-xl border border-border/30 bg-surface p-6 sm:p-8 animate-pulse">
+      <div className="rounded-xl border border-border bg-surface p-6 sm:p-8 animate-pulse">
         <div className="h-8 w-48 rounded bg-surface-hover" />
         <div className="mt-2 h-4 w-64 rounded bg-surface-hover" />
       </div>
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
-        {[1,2,3,4].map(i => <div key={i} className="h-24 rounded-lg border border-border/30 bg-surface animate-pulse" />)}
+        {[1,2,3,4].map(i => <div key={i} className="h-24 rounded-lg border border-border bg-surface animate-pulse" />)}
       </div>
     </div>
   );
@@ -186,7 +186,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="rounded-xl border border-border/30 bg-surface p-6 sm:p-8">
+      <div className="rounded-xl border border-border bg-surface p-6 sm:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Dashboard</h1>
@@ -208,7 +208,7 @@ export default function DashboardPage() {
           { label:'Admin', value:adminCount, icon:Shield, color:'text-cube-orange bg-cube-orange/10' },
           { label:'Competing', value:competing.length, icon:UserCheck, color:'text-cube-yellow bg-cube-yellow/10' },
         ].map(s => (
-          <Card key={s.label} className="border-border/30">
+          <Card key={s.label}>
             <CardContent className="flex items-center gap-3 p-4 sm:p-5">
               <div className={`rounded-lg p-2 ${s.color}`}><s.icon className="h-5 w-5"/></div>
               <div className="min-w-0">
@@ -222,8 +222,8 @@ export default function DashboardPage() {
 
       {/* Sections */}
       <div className="space-y-6 sm:space-y-8">
-        <Card className="border-border/30">
-          <CardHeader className="border-b border-border/20 pb-4">
+        <Card>
+          <CardHeader className="border-b border-border pb-4">
             <CardTitle className="text-lg flex items-center gap-2">
               <Trophy className="h-5 w-5 text-cube-blue" /> My Competitions
             </CardTitle>
@@ -246,8 +246,8 @@ export default function DashboardPage() {
         </Card>
 
         {adminOf.length > 0 && (
-          <Card className="border-border/30">
-            <CardHeader className="border-b border-border/20 pb-4">
+          <Card>
+            <CardHeader className="border-b border-border pb-4">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Shield className="h-5 w-5 text-cube-orange" /> Admin Of
               </CardTitle>
@@ -260,8 +260,8 @@ export default function DashboardPage() {
         )}
 
         {competingUpcoming > 0 && (
-          <Card className="border-border/30">
-            <CardHeader className="border-b border-border/20 pb-4">
+          <Card>
+            <CardHeader className="border-b border-border pb-4">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Calendar className="h-5 w-5 text-cube-blue" /> Upcoming Competitions
               </CardTitle>
@@ -277,8 +277,8 @@ export default function DashboardPage() {
         )}
 
         {competingLive > 0 && (
-          <Card className="border-border/30">
-            <CardHeader className="border-b border-border/20 pb-4">
+          <Card>
+            <CardHeader className="border-b border-border pb-4">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Play className="h-5 w-5 text-cube-green" /> Currently Competing
               </CardTitle>
@@ -294,8 +294,8 @@ export default function DashboardPage() {
         )}
 
         {competingCompleted > 0 && (
-          <Card className="border-border/30">
-            <CardHeader className="border-b border-border/20 pb-4">
+          <Card>
+            <CardHeader className="border-b border-border pb-4">
               <CardTitle className="text-lg flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-text-secondary" /> Completed Competitions
               </CardTitle>

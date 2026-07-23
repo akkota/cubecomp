@@ -26,7 +26,7 @@ export function SignupForm() {
   };
 
   return (
-    <Card className="w-full max-w-md border-border/30 shadow-md">
+    <Card className="w-full max-w-md shadow-md">
       <CardHeader className="pb-4 text-center">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-cube-green/10">
           <UserPlus className="h-6 w-6 text-cube-green" />

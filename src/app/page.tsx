@@ -148,7 +148,7 @@ export default function HomePage() {
                 {loading ? (
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {[1, 2, 3].map(i => (
-                      <Card key={i} className="animate-pulse border-border/30">
+                      <Card key={i} className="animate-pulse">
                         <CardContent className="p-6">
                           <div className="mb-3 h-5 w-3/4 rounded bg-surface-hover" />
                           <div className="mb-4 h-3 w-1/2 rounded bg-surface-hover" />
@@ -158,7 +158,7 @@ export default function HomePage() {
                     ))}
                   </div>
                 ) : list.length === 0 ? (
-                  <Card className="border-dashed border-border/30 bg-surface">
+                  <Card className="border-dashed bg-surface">
                     <CardContent className="flex flex-col items-center gap-4 py-16">
                       <Trophy className="h-10 w-10 text-text-tertiary/30" />
                       <p className="text-sm text-text-secondary">
@@ -179,7 +179,7 @@ export default function HomePage() {
                       const Icon = STATUS_UI[comp.displayStatus]?.icon || Clock;
                       return (
                       <Link key={comp.id} href={`/competitions/${comp.id}`} className="group block">
-                        <Card className="h-full border-border/20 transition-all duration-300 hover:border-cube-blue/20 hover:shadow-lg hover:-translate-y-1.5 hover:shadow-glow-blue/10">
+                        <Card className="h-full transition-all duration-300 hover:shadow-lg hover:-translate-y-1.5">
                           <CardHeader className="pb-3">
                             <div className="flex items-start justify-between gap-2">
                               <CardTitle className="line-clamp-1 text-lg group-hover:text-cube-blue transition-colors">
@@ -230,7 +230,7 @@ export default function HomePage() {
 /* ── Hero ─────────────────────────────────────────── */
 function HeroSection() {
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-border/30 bg-surface">
+    <section className="relative overflow-hidden rounded-2xl border border-border bg-surface">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-cube-blue/6 blur-3xl" />
         <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-cube-red/5 blur-3xl" />
@@ -297,7 +297,7 @@ function HowItWorksSection() {
       </div>
       <div className="grid gap-6 md:grid-cols-3">
         {steps.map((s, i) => (
-          <div key={s.step} className="animate-slide-up group relative rounded-xl border border-border/40 bg-surface p-6 transition-all duration-300 hover:border-border hover:shadow-md hover:-translate-y-1" style={{ animationDelay: `${i * 100}ms` }}>
+          <div key={s.step} className="animate-slide-up group relative rounded-xl border border-border bg-surface p-6 transition-all duration-300 hover:border-border hover:shadow-md hover:-translate-y-1" style={{ animationDelay: `${i * 100}ms` }}>
             <span className="mb-4 block font-mono text-4xl font-bold text-text-tertiary/30 group-hover:text-text-tertiary/50 transition-colors">{s.step}</span>
             <div className={`mb-3 inline-flex rounded-lg border p-2.5 ${s.color}`}><s.icon className="h-5 w-5" /></div>
             <h3 className="mb-2 text-lg font-semibold">{s.title}</h3>

@@ -180,7 +180,7 @@ export default function CompetitionDetailPage() {
 
   return (
     <div>
-      <div className="mb-8 rounded-xl border border-border/50 bg-gradient-to-br from-background to-cube-blue/5 p-6 sm:p-8">
+      <div className="mb-8 rounded-xl border border-border bg-gradient-to-br from-background to-cube-blue/5 p-6 sm:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -197,7 +197,7 @@ export default function CompetitionDetailPage() {
                   <Lock className="h-3 w-3" /> Private
                 </Badge>
               ) : (
-                <Badge variant="outline" className="gap-1 border-border/50 text-text-secondary">
+                <Badge variant="outline" className="gap-1 border-border text-text-secondary">
                   <Globe className="h-3 w-3" /> Public
                 </Badge>
               )}
@@ -259,8 +259,8 @@ export default function CompetitionDetailPage() {
               const wcaEvent = WCA_EVENTS.find(e => e.key === cEvent.event_key);
               const eventRounds = getRoundsForEvent(cEvent.id);
               return (
-                <Card key={cEvent.id} className="border-border/50 overflow-hidden">
-                  <CardHeader className="border-b border-border/30 bg-muted/20 pb-3">
+                <Card key={cEvent.id} className="overflow-hidden">
+                  <CardHeader className="border-b border-border bg-muted pb-3">
                     <CardTitle className="flex items-center gap-2 text-lg">
                       <span className="text-xl">{wcaEvent?.icon}</span>
                       {wcaEvent?.name}
@@ -276,7 +276,7 @@ export default function CompetitionDetailPage() {
                         <div
                           key={round.id}
                           className={`group flex items-center justify-between gap-4 px-4 py-4 sm:px-5 sm:py-4 ${
-                            index > 0 ? 'border-t border-border/25' : ''
+                            index > 0 ? 'border-t border-border' : ''
                           } ${
                             access.clickable
                               ? 'cursor-pointer transition-colors hover:bg-surface-hover/40'
@@ -315,7 +315,7 @@ export default function CompetitionDetailPage() {
         </TabsContent>
 
         <TabsContent value="competitors">
-          <Card className="border-border/50">
+          <Card>
             <CardContent className="flex flex-col items-center gap-4 py-12">
               <Users className={`h-10 w-10 ${competitorCount === 0 ? 'text-muted-foreground/40' : 'text-cube-blue'}`} />
               <div className="text-center">

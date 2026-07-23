@@ -199,7 +199,7 @@ export function CreateCompetitionForm() {
       </h1>
 
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <Card className="border-border/50">
+        <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Trophy className="h-5 w-5 text-cube-blue" />
@@ -218,7 +218,7 @@ export function CreateCompetitionForm() {
               <Label htmlFor="description">Description</Label>
               <Textarea id="description" placeholder="Optional description, rules, etc." rows={3} {...form.register('description')} />
             </div>
-            <div className="flex items-center justify-between rounded-lg border border-border/50 p-4">
+            <div className="flex items-center justify-between rounded-lg border border-border p-4">
               <div className="space-y-0.5">
                 <Label htmlFor="generate-scrambles" className="flex items-center gap-2 text-sm font-medium">
                   <ShuffleIcon className="h-4 w-4 text-cube-blue" />
@@ -228,7 +228,7 @@ export function CreateCompetitionForm() {
               </div>
               <Switch id="generate-scrambles" defaultChecked />
             </div>
-            <div className="flex items-center justify-between rounded-lg border border-border/50 p-4">
+            <div className="flex items-center justify-between rounded-lg border border-border p-4">
               <div className="space-y-0.5">
                 <Label htmlFor="allow-spectators" className="flex items-center gap-2 text-sm font-medium">
                   <Trophy className="h-4 w-4 text-cube-green" />
@@ -238,7 +238,7 @@ export function CreateCompetitionForm() {
               </div>
               <Switch id="allow-spectators" />
             </div>
-            <div className="flex items-center justify-between rounded-lg border border-border/50 p-4">
+            <div className="flex items-center justify-between rounded-lg border border-border p-4">
               <div className="space-y-0.5">
                 <Label htmlFor="require-verified" className="flex items-center gap-2 text-sm font-medium">
                   <Trophy className="h-4 w-4 text-cube-red" />
@@ -249,7 +249,7 @@ export function CreateCompetitionForm() {
               <Switch id="require-verified" />
             </div>
 
-            <div className="space-y-3 rounded-lg border border-border/50 p-4">
+            <div className="space-y-3 rounded-lg border border-border p-4">
               <div className="space-y-0.5">
                 <Label className="flex items-center gap-2 text-sm font-medium">
                   {visibility === 'private' ? <Lock className="h-4 w-4 text-cube-orange" /> : <Globe className="h-4 w-4 text-cube-blue" />}
@@ -266,7 +266,7 @@ export function CreateCompetitionForm() {
                   className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
                     visibility === 'public'
                       ? 'border-cube-blue/40 bg-cube-blue/10 text-foreground'
-                      : 'border-border/50 text-muted-foreground hover:bg-accent/40'
+                      : 'border-border text-muted-foreground hover:bg-accent/40'
                   }`}
                 >
                   <Globe className="h-4 w-4" /> Public
@@ -277,7 +277,7 @@ export function CreateCompetitionForm() {
                   className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
                     visibility === 'private'
                       ? 'border-cube-orange/40 bg-cube-orange/10 text-foreground'
-                      : 'border-border/50 text-muted-foreground hover:bg-accent/40'
+                      : 'border-border text-muted-foreground hover:bg-accent/40'
                   }`}
                 >
                   <Lock className="h-4 w-4" /> Private
@@ -304,7 +304,7 @@ export function CreateCompetitionForm() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/50">
+        <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Layers className="h-5 w-5 text-cube-green" />
@@ -335,7 +335,7 @@ export function CreateCompetitionForm() {
                     className={`flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-all duration-200 ${
                       selected
                         ? 'border-cube-blue/50 bg-cube-blue/5 shadow-sm'
-                        : 'border-border/50 hover:border-border hover:bg-accent/50'
+                        : 'border-border hover:border-border hover:bg-accent/50'
                     }`}
                     onClick={() => toggleEvent(event.key)}
                   >
@@ -359,7 +359,7 @@ export function CreateCompetitionForm() {
         </Card>
 
         {selectedEvents.length > 0 && (
-          <Card className="border-border/50">
+          <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Layers className="h-5 w-5 text-cube-orange" />
@@ -375,7 +375,7 @@ export function CreateCompetitionForm() {
                 return (
                   <div
                     key={evt.key}
-                    className="flex flex-col gap-3 rounded-xl border border-border/40 bg-surface-hover/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex flex-col gap-3 rounded-xl border border-border bg-muted p-4 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="flex min-w-0 items-center gap-3">
                       <span className="text-lg">{wcaEvent?.icon}</span>

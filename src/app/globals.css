@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "../styles/themes.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -9,7 +10,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-mono);
   --font-heading: var(--font-sans);
 
   /* Cube accent colors */
@@ -24,10 +25,17 @@
   --color-surface: var(--surface);
   --color-surface-hover: var(--surface-hover);
   --color-surface-raised: var(--surface-raised);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-navbar: var(--navbar);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-tertiary: var(--text-tertiary);
   --color-border-subtle: var(--border-subtle);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-overlay: var(--overlay);
+  --color-input-bg: var(--input);
 
   /* Shadow tokens */
   --shadow-xs: var(--shadow-xs);
@@ -45,76 +53,79 @@
   --radius-2xl: calc(var(--radius-base) * 2);
   --radius-3xl: calc(var(--radius-base) * 3);
 
-  /* Legacy shadcn compat */
-  --color-primary: var(--cube-blue);
-  --color-primary-foreground: oklch(0.98 0 0);
-  --color-secondary: var(--surface-hover);
-  --color-secondary-foreground: var(--text-primary);
-  --color-destructive: var(--cube-red);
-  --color-destructive-foreground: oklch(0.98 0 0);
-  --color-muted: var(--surface);
+  /* Semantic / shadcn compat — all theme-driven */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
   --color-muted-foreground: var(--text-secondary);
-  --color-accent: var(--surface-hover);
-  --color-accent-foreground: var(--text-primary);
-  --color-popover: var(--surface-raised);
-  --color-popover-foreground: var(--text-primary);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-card: var(--surface);
   --color-card-foreground: var(--text-primary);
-  --color-border: var(--border-subtle);
-  --color-input: var(--border-subtle);
-  --color-ring: var(--cube-blue);
+  --color-border: var(--border);
+  /* Fill for inputs; borders use border-border */
+  --color-input: var(--input);
+  --color-ring: var(--focus);
 }
 
-:root {
-  --background: oklch(0.98 0.005 270);
-  --foreground: oklch(0.12 0.02 270);
-  --surface: oklch(1 0 0);
-  --surface-hover: oklch(0.95 0.01 270);
-  --surface-raised: oklch(1 0 0);
-  --text-primary: oklch(0.12 0.02 270);
-  --text-secondary: oklch(0.5 0.02 270);
-  --text-tertiary: oklch(0.7 0.02 270);
-  --border-subtle: oklch(0.9 0.01 270);
+/* Fallback ONLY before data-theme is applied (avoids overriding active themes).
+   Must not equal the specificity of [data-theme="…"] or it wins by source order. */
+:root:not([data-theme]) {
+  --background: oklch(0.09 0.015 265);
+  --foreground: oklch(0.93 0.005 270);
+  --navbar: oklch(0.11 0.018 265);
+  --surface: oklch(0.15 0.022 265);
+  --surface-hover: oklch(0.2 0.025 265);
+  --surface-raised: oklch(0.19 0.028 265);
+  --surface-elevated: var(--surface-raised);
+  --muted: oklch(0.12 0.02 265);
+  --input: oklch(0.13 0.02 265);
+  --text-primary: oklch(0.93 0.005 270);
+  --text-secondary: oklch(0.62 0.02 270);
+  --text-tertiary: oklch(0.45 0.02 270);
+  --border-subtle: oklch(0.28 0.025 265);
+  --border: var(--border-subtle);
+  --card-border-color: var(--border);
+  --card-hover-border: var(--primary);
+  --card-hover-shadow: var(--shadow-md);
+  --card-gradient: none;
 
-  --cube-blue: oklch(0.52 0.18 255);
-  --cube-red: oklch(0.52 0.22 25);
-  --cube-green: oklch(0.52 0.18 145);
-  --cube-yellow: oklch(0.72 0.18 95);
-  --cube-orange: oklch(0.62 0.2 60);
-  --cube-white: oklch(1 0 0);
+  --primary: oklch(0.65 0.2 255);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.2 0.025 265);
+  --secondary-foreground: oklch(0.92 0.005 270);
+  --accent: oklch(0.24 0.055 255);
+  --accent-foreground: oklch(0.85 0.08 255);
+  --success: oklch(0.65 0.18 145);
+  --warning: oklch(0.8 0.16 95);
+  --danger: oklch(0.65 0.24 25);
+  --focus: var(--primary);
+  --shadow: var(--shadow-md);
+  --overlay: color-mix(in oklch, var(--foreground) 18%, transparent);
+  --selection: color-mix(in oklch, var(--primary) 28%, transparent);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--text-primary);
+  --radius: var(--radius-base);
 
-  --radius-base: 0.625rem;
-
-  --shadow-xs: 0 1px 2px oklch(0 0 0 / 6%);
-  --shadow-sm: 0 1px 3px oklch(0 0 0 / 8%), 0 1px 2px oklch(0 0 0 / 4%);
-  --shadow-md: 0 4px 12px oklch(0 0 0 / 8%), 0 1px 3px oklch(0 0 0 / 4%);
-  --shadow-lg: 0 12px 32px oklch(0 0 0 / 10%), 0 2px 8px oklch(0 0 0 / 4%);
-  --shadow-glow-blue: 0 0 40px oklch(0.52 0.18 255 / 20%);
-}
-
-.dark {
-  --background: oklch(0.095 0.015 265);
-  --foreground: oklch(0.92 0.005 270);
-  --surface: oklch(0.13 0.02 265);
-  --surface-hover: oklch(0.18 0.02 265);
-  --surface-raised: oklch(0.17 0.025 265);
-  --text-primary: oklch(0.92 0.005 270);
-  --text-secondary: oklch(0.55 0.02 270);
-  --text-tertiary: oklch(0.4 0.02 270);
-  --border-subtle: oklch(0.2 0.02 265);
-
-  --cube-blue: oklch(0.62 0.2 255);
-  --cube-red: oklch(0.62 0.24 25);
-  --cube-green: oklch(0.62 0.2 145);
-  --cube-yellow: oklch(0.78 0.18 95);
-  --cube-orange: oklch(0.68 0.22 60);
+  --cube-blue: oklch(0.65 0.2 255);
+  --cube-red: oklch(0.65 0.24 25);
+  --cube-green: oklch(0.65 0.2 145);
+  --cube-yellow: oklch(0.8 0.18 95);
+  --cube-orange: oklch(0.7 0.22 60);
   --cube-white: oklch(0.95 0.005 270);
 
-  --shadow-xs: 0 1px 2px oklch(0 0 0 / 30%);
-  --shadow-sm: 0 1px 3px oklch(0 0 0 / 40%), 0 1px 2px oklch(0 0 0 / 20%);
-  --shadow-md: 0 4px 16px oklch(0 0 0 / 40%), 0 1px 3px oklch(0 0 0 / 20%);
-  --shadow-lg: 0 12px 40px oklch(0 0 0 / 50%), 0 2px 8px oklch(0 0 0 / 20%);
-  --shadow-glow-blue: 0 0 60px oklch(0.62 0.2 255 / 20%);
+  --radius-base: 0.625rem;
+  --shadow-xs: 0 1px 2px oklch(0 0 0 / 35%);
+  --shadow-sm: 0 2px 6px oklch(0 0 0 / 40%), 0 1px 2px oklch(0 0 0 / 25%);
+  --shadow-md: 0 6px 20px oklch(0 0 0 / 45%), 0 2px 6px oklch(0 0 0 / 25%);
+  --shadow-lg: 0 14px 44px oklch(0 0 0 / 55%), 0 4px 12px oklch(0 0 0 / 30%);
+  --shadow-glow-blue: 0 0 60px oklch(0.65 0.2 255 / 22%);
 }
 
 @layer base {
@@ -122,14 +133,12 @@
   body { @apply bg-background text-foreground antialiased; }
   html { @apply font-sans; }
 
-  /* Type scale */
   h1 { @apply text-4xl font-bold tracking-tight sm:text-5xl; }
   h2 { @apply text-2xl font-semibold tracking-tight sm:text-3xl; }
   h3 { @apply text-xl font-semibold; }
   p { @apply leading-relaxed; }
 }
 
-/* ── Utility layers ─────────────────────────────────────── */
 @layer utilities {
   .bg-cube-grid {
     background-image:
@@ -160,10 +169,9 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Base styles ────────────────────────────────────────── */
-::selection { background: oklch(0.62 0.2 255 / 0.25); }
+::selection { background: var(--selection); }
 :focus-visible {
-  outline: 2px solid var(--cube-blue);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 html { scroll-behavior: smooth; }
