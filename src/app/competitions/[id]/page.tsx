@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { createClient } from '@/lib/supabase/client';
+import { deriveCompetitionStatus } from '@/lib/competition-status';
 import { WCA_EVENTS } from '@/lib/wca-events';
 import { toast } from 'sonner';
 import { Trophy, Users, Clock, Lock, Calendar, ArrowRight, CuboidIcon as CubeIcon, UserPlus } from 'lucide-react';
@@ -142,6 +143,8 @@ export default function CompetitionDetailPage() {
     return { clickable: false, badge: { label: 'Not qualified', variant: 'secondary' } };
   };
 
+  const displayStatus = deriveCompetitionStatus(rounds);
+
   return (
     <div>
       {/* Header */}
@@ -151,11 +154,11 @@ export default function CompetitionDetailPage() {
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{competition.name}</h1>
               <Badge variant={
-                competition.status === 'upcoming' ? 'default' :
-                competition.status === 'ongoing' ? 'destructive' :
+                displayStatus === 'upcoming' ? 'default' :
+                displayStatus === 'ongoing' ? 'destructive' :
                 'secondary'
               } className="shrink-0">
-                {competition.status}
+                {displayStatus === 'upcoming' ? 'Upcoming' : displayStatus === 'ongoing' ? 'Live' : 'Completed'}
               </Badge>
             </div>
             {competition.description && (

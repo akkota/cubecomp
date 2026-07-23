@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { createClient } from '@/lib/supabase/client';
 import { WCA_EVENTS } from '@/lib/wca-events';
+import { deriveCompetitionStatus } from '@/lib/competition-status';
 import { generateScramblesAction } from '@/actions/generateScrambles';
 import { calculateAdvancementAction } from '@/actions/calculateAdvancement';
 import type { AdvancementResult } from '@/types/advancement';
@@ -69,14 +70,20 @@ export default function CompetitionAdminPage() {
     if (!error) setAllRounds(p => p.map(r => r.id === roundId ? { ...r, [field]: value } : r));
   };
 
+  const syncCompStatus = async (rounds: any[]) => {
+    const status = deriveCompetitionStatus(rounds);
+    await supabase.from('competitions').update({ status }).eq('id', id);
+    setCompetition((prev: any) => prev ? { ...prev, status } : prev);
+  };
+
   const hsr = async (rid:string)=>{if(startRef.current)return;startRef.current=rid;setStartingRound(rid);
   const{error}=await supabase.from('rounds').update({status:'active',started_at:new Date().toISOString()}).eq('id',rid);
-  if(error){toast.error(error.message)}else{toast.success('Round started!');setAllRounds(p=>p.map(r=>r.id===rid?{...r,status:'active',started_at:new Date().toISOString()}:r))}
+  if(error){toast.error(error.message)}else{toast.success('Round started!');const up = allRounds.map(r=>r.id===rid?{...r,status:'active',started_at:new Date().toISOString()}:r);setAllRounds(up);syncCompStatus(up)}
   setStartingRound(null);startRef.current=null};
 
   const her = async (rid:string)=>{if(endRef.current)return;endRef.current=rid;setEndingRound(rid);
   const{error}=await supabase.from('rounds').update({status:'completed',ended_at:new Date().toISOString()}).eq('id',rid);
-  if(error){toast.error(error.message)}else{toast.success('Round ended!');setAllRounds(p=>p.map(r=>r.id===rid?{...r,status:'completed',ended_at:new Date().toISOString()}:r))}
+  if(error){toast.error(error.message)}else{toast.success('Round ended!');const up = allRounds.map(r=>r.id===rid?{...r,status:'completed',ended_at:new Date().toISOString()}:r);setAllRounds(up);syncCompStatus(up)}
   setEndingRound(null);endRef.current=null};
 
   const hca = async (r:any)=>{setCalculating(p=>({...p,[r.id]:true}));
