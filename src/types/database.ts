@@ -6,6 +6,9 @@ export interface Profile {
   display_name: string | null;
   wca_id: string | null;
   avatar_url: string | null;
+  notify_round_start: boolean;
+  notify_advancement: boolean;
+  notify_pb_beaten: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -16,6 +19,10 @@ export interface Competition {
   name: string;
   description: string;
   status: 'upcoming' | 'ongoing' | 'completed' | 'cancelled';
+  visibility: 'public' | 'private';
+  generate_scrambles: boolean;
+  allow_spectators: boolean;
+  require_verified_solves: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -67,6 +74,19 @@ export interface Solve {
   penalty: 'none' | 'DNF' | '+2' | 'DNS';
   submitted_by: string | null;
   submitted_at: string;
+}
+
+export interface RoundSubmission {
+  id: string;
+  round_id: string;
+  competitor_id: string;
+  video_url: string | null;
+  verification_status: 'none' | 'pending' | 'verified' | 'rejected';
+  verified_by: string | null;
+  verified_at: string | null;
+  rejected_reason: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // Enriched types for UI (with joins)

@@ -13,7 +13,7 @@ import { RotatingCube } from '@/components/cube/rotating-cube';
 import type { Competition } from '@/types/database';
 import {
   ArrowRight, Trophy, Layers, Timer, BarChart3,
-  Calendar, Sparkles, Zap, Search, Clock, CheckCircle2, Play
+  Calendar, Sparkles, Zap, Search, Clock, CheckCircle2, Play, Lock
 } from 'lucide-react';
 
 const STATUS_UI: Record<string, { variant: 'default'|'destructive'|'secondary'|'outline'; label: string; icon: any }> = {
@@ -200,11 +200,18 @@ export default function HomePage() {
                               })}
                             </CardDescription>
                           </CardHeader>
-                          <CardContent className="flex items-center justify-between pt-0">
-                            <Badge variant={STATUS_UI[comp.displayStatus].variant} className="transition-colors">
-                              {STATUS_UI[comp.displayStatus].label}
-                            </Badge>
-                            <ArrowRight className="h-4 w-4 text-text-tertiary opacity-0 transition-all duration-300 group-hover:opacity-100 group-hover:translate-x-1" />
+                          <CardContent className="flex items-center justify-between gap-2 pt-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <Badge variant={STATUS_UI[comp.displayStatus].variant} className="transition-colors">
+                                {STATUS_UI[comp.displayStatus].label}
+                              </Badge>
+                              {comp.visibility === 'private' && (
+                                <Badge variant="outline" className="gap-1 border-cube-orange/40 text-cube-orange">
+                                  <Lock className="h-3 w-3" /> Private
+                                </Badge>
+                              )}
+                            </div>
+                            <ArrowRight className="h-4 w-4 shrink-0 text-text-tertiary opacity-0 transition-all duration-300 group-hover:opacity-100 group-hover:translate-x-1" />
                           </CardContent>
                         </Card>
                       </Link>
@@ -254,7 +261,7 @@ function HeroSection() {
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Button>
             </Link>
-            <Link href="/competitions">
+            <Link href="/">
               <Button variant="outline" size="lg" className="gap-2 h-12 px-6 text-base">
                 <BarChart3 className="h-5 w-5" />
                 Browse Events

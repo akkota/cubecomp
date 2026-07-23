@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { createClient } from '@/lib/supabase/client';
 import { deriveCompetitionStatus } from '@/lib/competition-status';
-import { PlusCircle, Trophy, Calendar, ArrowRight, CuboidIcon as CubeIcon, Shield, UserCheck, Play, CheckCircle2 } from 'lucide-react';
+import { PlusCircle, Trophy, Calendar, ArrowRight, CuboidIcon as CubeIcon, Shield, UserCheck, Play, CheckCircle2, Lock } from 'lucide-react';
 import type { Competition } from '@/types/database';
 
 const STATUS_VARIANTS: Record<string, 'default'|'destructive'|'secondary'> = { upcoming:'default',ongoing:'destructive',completed:'secondary' };
@@ -64,6 +64,11 @@ function CompetitionList({
                 >
                   {STATUS_LABELS[c._displayStatus] || c._displayStatus}
                 </Badge>
+                {c.visibility === 'private' && (
+                  <Badge variant="outline" className="h-6 gap-1 border-cube-orange/40 px-2 text-[11px] font-medium text-cube-orange">
+                    <Lock className="h-3 w-3" /> Private
+                  </Badge>
+                )}
                 {manageLabel && (
                   <Link href={`/competitions/${c.id}/admin`}>
                     <Button variant="outline" size="sm" className="h-7 cursor-pointer px-2.5 text-xs">
@@ -174,6 +179,7 @@ export default function DashboardPage() {
 
   const liveCount = created.filter(c => c._displayStatus === 'ongoing').length;
   const competingLive = competing.filter(c => c._displayStatus === 'ongoing').length;
+  const competingUpcoming = competing.filter(c => c._displayStatus === 'upcoming').length;
   const competingCompleted = competing.filter(c => c._displayStatus === 'completed').length;
   const adminCount = created.length + adminOf.length;
 
@@ -249,6 +255,23 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="p-4 sm:p-5">
               <CompetitionList list={adminOf} emptyMsg="" manageLabel />
+            </CardContent>
+          </Card>
+        )}
+
+        {competingUpcoming > 0 && (
+          <Card className="border-border/30">
+            <CardHeader className="border-b border-border/20 pb-4">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-cube-blue" /> Upcoming Competitions
+              </CardTitle>
+              <CardDescription>Competitions you&apos;re registered for that haven&apos;t started yet</CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-5">
+              <CompetitionList
+                list={competing.filter(c => c._displayStatus === 'upcoming')}
+                emptyMsg=""
+              />
             </CardContent>
           </Card>
         )}

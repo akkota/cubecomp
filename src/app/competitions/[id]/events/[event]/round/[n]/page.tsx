@@ -92,27 +92,38 @@ export default function RoundPage() {
   useEffect(() => { const run = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: cEvent } = await supabase.from('competition_events').select('*').eq('competition_id', params.id).eq('event_key', params.event).single();
-    if (!cEvent) { toast.error('Event not found'); return; }
+    if (!cEvent) { toast.error('Event not found'); setLoading(false); return; }
     setCompEvent(cEvent);
     const { data: r } = await supabase.from('rounds').select('*').eq('competition_event_id', cEvent.id).eq('round_number', parseInt(params.n)).single();
-    if (!r) { toast.error('Round not found'); return; }
+    if (!r) { toast.error('Round not found'); setLoading(false); return; }
     setRound(r);
     const { data: comp } = await supabase.from('competitions').select('*').eq('id', params.id).single();
     setCompetition(comp);
-    // Access check
-    const isSpectator = comp?.allow_spectators === true;
+    // Access check — private comps never grant scramble access via spectator/password alone
+    const isSpectator = comp?.allow_spectators === true && comp?.visibility !== 'private';
     let competitorId: string | null = null;
+    let isAdmin = false;
+    if (user && comp) {
+      if (user.id === comp.created_by) {
+        isAdmin = true;
+      } else {
+        const { data: adminRow } = await supabase
+          .from('competition_admins')
+          .select('id')
+          .eq('competition_id', params.id)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        isAdmin = !!adminRow;
+      }
+    }
     if (!user) {
-      // Not logged in: only view if spectator mode is on and round is active/completed
       if (isSpectator && r.status !== 'pending') { setAccessState('granted'); }
       else { setAccessState('blocked_registration'); }
-    } else if (user.id === comp?.created_by) {
-      // Owner always has full access
+    } else if (isAdmin) {
       setAccessState('granted');
     } else {
       const { data: competitor } = await supabase.from('competitors').select('id').eq('competition_id', params.id).eq('user_id', user.id).maybeSingle();
       if (!competitor) {
-        // Not registered: spectator if allowed and round is active/completed
         if (isSpectator && r.status !== 'pending') { setAccessState('granted'); }
         else { setAccessState('blocked_registration'); }
       }
@@ -124,8 +135,8 @@ export default function RoundPage() {
       if (competitor) competitorId = competitor.id;
     }
 
-    // Also fetch competitor for owner (who may also be registered)
-    if (!competitorId && user && user.id === comp?.created_by) {
+    // Also fetch competitor for owner/admin (who may also be registered)
+    if (!competitorId && user && isAdmin) {
       const { data: ownerComp } = await supabase.from('competitors').select('id').eq('competition_id', params.id).eq('user_id', user.id).maybeSingle();
       if (ownerComp) competitorId = ownerComp.id;
     }

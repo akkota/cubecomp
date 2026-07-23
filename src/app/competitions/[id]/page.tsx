@@ -3,14 +3,25 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { createClient } from '@/lib/supabase/client';
 import { deriveCompetitionStatus } from '@/lib/competition-status';
+import { registerForCompetitionAction, checkCompetitionUnlockAction } from '@/actions/competitionPrivacy';
 import { WCA_EVENTS } from '@/lib/wca-events';
 import { toast } from 'sonner';
-import { Trophy, Users, Clock, Lock, Calendar, ArrowRight, CuboidIcon as CubeIcon, UserPlus } from 'lucide-react';
+import { Trophy, Users, Lock, Calendar, ArrowRight, CuboidIcon as CubeIcon, UserPlus, Globe } from 'lucide-react';
 
 export default function CompetitionDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -20,8 +31,12 @@ export default function CompetitionDetailPage() {
   const [roundParticipation, setRoundParticipation] = useState<Set<string>>(new Set());
   const [isOwner, setIsOwner] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
+  const [hasUnlock, setHasUnlock] = useState(false);
   const [competitorCount, setCompetitorCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [registering, setRegistering] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -30,11 +45,14 @@ export default function CompetitionDetailPage() {
 
       const { data: comp } = await supabase
         .from('competitions')
-        .select('*')
+        .select('id, created_by, name, description, status, visibility, created_at, updated_at, generate_scrambles, allow_spectators, require_verified_solves')
         .eq('id', id)
         .single();
 
-      if (!comp) return;
+      if (!comp) {
+        setLoading(false);
+        return;
+      }
       setCompetition(comp);
       setIsOwner(user?.id === comp.created_by);
 
@@ -50,29 +68,9 @@ export default function CompetitionDetailPage() {
         const { data: allRounds } = await supabase
           .from('rounds')
           .select('*')
-          .in('competition_event_id', eventIds)
+          .in('competition_event_id', eventIds.length > 0 ? eventIds : ['00000000-0000-0000-0000-000000000000'])
           .order('round_number');
         setRounds(allRounds ?? []);
-
-        if (user) {
-          const { data: competitor } = await supabase
-            .from('competitors')
-            .select('id')
-            .eq('competition_id', id)
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-          if (competitor) {
-            const roundIds = (allRounds ?? []).map(r => r.id);
-            const { data: participants } = await supabase
-              .from('round_participants')
-              .select('round_id')
-              .in('round_id', roundIds)
-              .eq('competitor_id', competitor.id);
-            const qualifiedRounds = new Set((participants ?? []).map(p => p.round_id));
-            setRoundParticipation(qualifiedRounds);
-          }
-        }
       }
 
       const { count } = await supabase
@@ -89,6 +87,17 @@ export default function CompetitionDetailPage() {
           .eq('user_id', user.id)
           .maybeSingle();
         setIsRegistered(!!reg);
+
+        const unlock = await checkCompetitionUnlockAction(id);
+        setHasUnlock(unlock.unlocked);
+
+        if (reg) {
+          const { data: parts } = await supabase
+            .from('round_participants')
+            .select('round_id')
+            .eq('competitor_id', reg.id);
+          setRoundParticipation(new Set((parts ?? []).map(p => p.round_id)));
+        }
       }
 
       setLoading(false);
@@ -96,19 +105,32 @@ export default function CompetitionDetailPage() {
     fetchData();
   }, [id]);
 
-  const handleRegister = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { toast.error('Login required'); return; }
-    const { error } = await supabase.from('competitors').insert({
-      competition_id: id, user_id: user.id,
-    });
-    if (error) {
-      if (error.code === '23505') { toast.success('Already registered!'); setIsRegistered(true); return; }
-      toast.error(error.message);
-    } else {
+  const handleRegisterClick = () => {
+    if (!competition) return;
+    if (competition.visibility === 'private' && !hasUnlock && !isOwner) {
+      setPassword('');
+      setPasswordOpen(true);
+      return;
+    }
+    void submitRegistration();
+  };
+
+  const submitRegistration = async (pwd?: string) => {
+    setRegistering(true);
+    try {
+      const result = await registerForCompetitionAction(id, pwd ?? null);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
       toast.success('Registered!');
       setIsRegistered(true);
+      setHasUnlock(true);
       setCompetitorCount(c => c + 1);
+      setPasswordOpen(false);
+      setPassword('');
+    } finally {
+      setRegistering(false);
     }
   };
 
@@ -130,10 +152,23 @@ export default function CompetitionDetailPage() {
   const getRoundsForEvent = (eventId: string) =>
     rounds.filter(r => r.competition_event_id === eventId);
 
+  const displayStatus = deriveCompetitionStatus(rounds);
+  const registrationOpen = displayStatus !== 'completed';
+  const isPrivate = competition.visibility === 'private';
+
   const getRoundAccess = (round: any): { clickable: boolean; badge: { label: string; variant: string } } => {
     if (isOwner) return { clickable: true, badge: { label: round.status, variant: round.status === 'active' ? 'destructive' : round.status === 'completed' ? 'secondary' : 'outline' } };
+    if (!registrationOpen) {
+      return {
+        clickable: false,
+        badge: {
+          label: round.status === 'completed' ? 'Completed' : 'Closed',
+          variant: 'secondary',
+        },
+      };
+    }
     if (!isRegistered) return round.round_number === 1
-      ? { clickable: true, badge: { label: 'Register to compete', variant: 'outline' } }
+      ? { clickable: true, badge: { label: isPrivate && !hasUnlock ? 'Password required' : 'Register to compete', variant: 'outline' } }
       : { clickable: false, badge: { label: 'Locked', variant: 'secondary' } };
     if (round.status === 'pending') return round.round_number === 1
       ? { clickable: false, badge: { label: 'Not started', variant: 'outline' } }
@@ -143,15 +178,12 @@ export default function CompetitionDetailPage() {
     return { clickable: false, badge: { label: 'Not qualified', variant: 'secondary' } };
   };
 
-  const displayStatus = deriveCompetitionStatus(rounds);
-
   return (
     <div>
-      {/* Header */}
       <div className="mb-8 rounded-xl border border-border/50 bg-gradient-to-br from-background to-cube-blue/5 p-6 sm:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{competition.name}</h1>
               <Badge variant={
                 displayStatus === 'upcoming' ? 'default' :
@@ -160,6 +192,15 @@ export default function CompetitionDetailPage() {
               } className="shrink-0">
                 {displayStatus === 'upcoming' ? 'Upcoming' : displayStatus === 'ongoing' ? 'Live' : 'Completed'}
               </Badge>
+              {isPrivate ? (
+                <Badge variant="outline" className="gap-1 border-cube-orange/40 text-cube-orange">
+                  <Lock className="h-3 w-3" /> Private
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="gap-1 border-border/50 text-text-secondary">
+                  <Globe className="h-3 w-3" /> Public
+                </Badge>
+              )}
             </div>
             {competition.description && (
               <p className="mt-2 text-sm text-muted-foreground">{competition.description}</p>
@@ -177,15 +218,20 @@ export default function CompetitionDetailPage() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            {!isOwner && !isRegistered && (
-              <Button onClick={handleRegister} className="gap-2" size="sm">
-                <UserPlus className="h-4 w-4" />
-                Register
+            {!isOwner && !isRegistered && registrationOpen && (
+              <Button onClick={handleRegisterClick} className="gap-2" size="sm" disabled={registering}>
+                {isPrivate && !hasUnlock ? <Lock className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+                {registering ? 'Registering…' : isPrivate && !hasUnlock ? 'Unlock & Register' : 'Register'}
               </Button>
             )}
             {isRegistered && !isOwner && (
               <Badge variant="outline" className="gap-1.5 border-cube-green/30 text-cube-green">
                 <Users className="h-3 w-3" /> Registered
+              </Badge>
+            )}
+            {!isOwner && !isRegistered && !registrationOpen && (
+              <Badge variant="secondary" className="gap-1.5">
+                Registration closed
               </Badge>
             )}
             {isOwner && (
@@ -237,10 +283,13 @@ export default function CompetitionDetailPage() {
                               : 'opacity-60'
                           }`}
                           onClick={() => {
-                            if (access.clickable) {
-                              window.location.href =
-                                `/competitions/${id}/events/${cEvent.event_key}/round/${round.round_number}`;
+                            if (!access.clickable) return;
+                            if (!isRegistered && !isOwner) {
+                              handleRegisterClick();
+                              return;
                             }
+                            window.location.href =
+                              `/competitions/${id}/events/${cEvent.event_key}/round/${round.round_number}`;
                           }}
                         >
                           <div className="flex min-w-0 items-center gap-3">
@@ -273,8 +322,8 @@ export default function CompetitionDetailPage() {
                 {competitorCount === 0 ? (
                   <>
                     <p className="font-medium">No competitors registered yet</p>
-                    {!isRegistered && !isOwner && (
-                      <Button onClick={handleRegister} variant="outline" size="sm" className="mt-3 gap-2">
+                    {!isRegistered && !isOwner && registrationOpen && (
+                      <Button onClick={handleRegisterClick} variant="outline" size="sm" className="mt-3 gap-2" disabled={registering}>
                         <UserPlus className="h-4 w-4" /> Be the first to register
                       </Button>
                     )}
@@ -289,6 +338,49 @@ export default function CompetitionDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={passwordOpen} onOpenChange={setPasswordOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-4 w-4 text-cube-orange" /> Private competition
+            </DialogTitle>
+            <DialogDescription>
+              Enter the competition password to unlock registration. Knowing the password alone does not grant scramble access or allow submitting times — you must register after unlocking.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="join-password">Password</Label>
+            <Input
+              id="join-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void submitRegistration(password);
+                }
+              }}
+              placeholder="Competition password"
+              className="h-10"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasswordOpen(false)} disabled={registering}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void submitRegistration(password)}
+              disabled={registering || password.trim().length === 0}
+              className="gap-2"
+            >
+              {registering ? 'Verifying…' : 'Unlock & Register'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
