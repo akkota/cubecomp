@@ -5,10 +5,7 @@ import { getEventByKey, type WcaEvent } from './wca-events';
  * Each WCA event maps to a puzzle and scramble generator.
  */
 
-async function getRandomScrambleForEvent() {
-  const mod = await import('cubing/scramble');
-  return mod.randomScrambleForEvent;
-}
+import { randomScrambleForEvent as cubingRandomScrambleForEvent } from 'cubing/scramble';
 
 interface ScrambleConfig {
   puzzle: string;    // cubing.js puzzle class name
@@ -50,7 +47,7 @@ async function generateScramble(eventKey: string): Promise<string> {
     throw new Error(`No scramble config for event: ${eventKey}`);
   }
 
-  const randomScrambleForEvent = await getRandomScrambleForEvent();
+  const randomScrambleForEvent = cubingRandomScrambleForEvent;
 
   // cubing.js event IDs use WCA names
   const eventIdMap: Record<string, string> = {
