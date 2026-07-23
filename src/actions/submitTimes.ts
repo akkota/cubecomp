@@ -74,9 +74,18 @@ export async function submitTimesAction(
     }
   }
 
-  // 6. Use upsert instead of delete+insert for idempotency.
-  //    If the same (round_id, competitor_id, solve_number) exists, update it.
-  //    This prevents errors from the unique constraint when called concurrently.
+  // 6. Prevent duplicate submissions: check if solves already exist for this competitor
+  const { data: existingSolves } = await supabase
+    .from('solves')
+    .select('solve_number')
+    .eq('round_id', roundId)
+    .eq('competitor_id', competitor.id);
+
+  if (existingSolves && existingSolves.length > 0) {
+    return { success: false, error: 'Times already submitted for this round. You cannot submit again.' };
+  }
+
+  // 7. Insert solves
   const inserts = solves.map(solve => ({
     round_id: roundId,
     competitor_id: competitor.id,

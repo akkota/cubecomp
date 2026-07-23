@@ -32,6 +32,7 @@ export default function RoundPage() {
   const [videoUrl, setVideoUrl] = useState('');
   const [videoSubmitted, setVideoSubmitted] = useState(false);
   const [useTimer, setUseTimer] = useState(true);
+  const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const submittingRef = useRef(false);
   const supabase = createClient();
 
@@ -69,7 +70,8 @@ export default function RoundPage() {
       // Load existing solves
       if (competitor) {
         const { data: sol } = await supabase.from('solves').select('*').eq('round_id', r.id).eq('competitor_id', competitor.id).order('solve_number');
-        if (sol) {
+        if (sol && sol.length > 0) {
+          setAlreadySubmitted(true);
           const tm: Record<number,string>={}; const pm: Record<number,string>={};
           for (const s of sol) { tm[s.solve_number] = s.time_ms!==null ? (s.time_ms/1000).toFixed(2):''; pm[s.solve_number]=s.penalty==='none'?'':s.penalty; }
           setTimes(tm); setPenalties(pm);
@@ -203,8 +205,21 @@ export default function RoundPage() {
         </Card>
       )}
 
+      {/* Already submitted notice */}
+      {accessState==='granted'&&round?.status==='active'&&alreadySubmitted&&(
+        <Card className="border-border/30 border-dashed">
+          <CardContent className="flex items-center gap-3 py-4">
+            <CheckCircle2 className="h-5 w-5 text-cube-green" />
+            <div>
+              <p className="text-sm font-medium">Times already submitted</p>
+              <p className="text-xs text-text-secondary">You&apos;ve already submitted your times for this round. Resubmission is not allowed. Contact an admin if you need corrections.</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Mode toggle: Timer vs Manual */}
-      {accessState==='granted'&&round?.status==='active'&&(
+      {accessState==='granted'&&round?.status==='active'&&!alreadySubmitted&&(
         <div className="flex items-center gap-2">
           <div className="flex rounded-lg border border-border/30 p-0.5 bg-surface-hover/30">
             <button
@@ -228,7 +243,7 @@ export default function RoundPage() {
       )}
 
       {/* Stackmat Timer */}
-      {accessState==='granted'&&round?.status==='active'&&useTimer&&(
+      {accessState==='granted'&&round?.status==='active'&&!alreadySubmitted&&useTimer&&(
         <CubeTimer
           solveIndex={timesFilledCount}
           solveCount={solveCount}
@@ -237,7 +252,7 @@ export default function RoundPage() {
       )}
 
       {/* Time Entry */}
-      {accessState==='granted'&&round?.status==='active'&&(
+      {accessState==='granted'&&round?.status==='active'&&!alreadySubmitted&&(
         <Card className="border-border/30">
           <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Timer className="h-4 w-4 text-cube-green"/>{useTimer ? 'Review & Submit Times' : 'Enter Times'}</CardTitle></CardHeader>
           <CardContent>
