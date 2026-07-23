@@ -1,29 +1,64 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { calculateResult, formatTime } from '@/lib/wca-events';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { CuboidIcon as CubeIcon, Trophy, Medal, Award } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { CuboidIcon as CubeIcon, Trophy, Medal, Award, Radio } from 'lucide-react';
 
 interface Props { roundId:string;eventKey:string;format:'average'|'mean';solveCount:number }
 
-export function RoundLeaderboard({ roundId,eventKey,format,solveCount }:Props) {
-  const [solves,setSolves] = useState<{competitor_id:string;username:string;display_name:string|null;solves:(number|null)[]}[]>([]);
-  const [loading,setLoading] = useState(true);
+type LeaderboardRow = { competitor_id:string;username:string;display_name:string|null;solves:(number|null)[] };
 
-  useEffect(()=>{const go=async()=>{
+export function RoundLeaderboard({ roundId,eventKey,format,solveCount }:Props) {
+  const [solves,setSolves] = useState<LeaderboardRow[]>([]);
+  const [loading,setLoading] = useState(true);
+  const [live,setLive] = useState(false);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchData = useCallback(async () => {
     const supabase = createClient();
     const{data}=await supabase.from('solves').select('*,competitor:competitor_id(*,user:user_id(id,username,display_name))').eq('round_id',roundId).order('competitor_id').order('solve_number');
     if(!data){setLoading(false);return}
     const g=new Map<string,(number|null)[]>();const m=new Map<string,{username:string;display_name:string|null}>();
     for(const s of data as any[]){const cId=s.competitor_id;if(!m.has(cId))m.set(cId,{username:s.competitor?.user?.username??'?',display_name:s.competitor?.user?.display_name??null});if(!g.has(cId))g.set(cId,[]);
       const t=s.penalty==='DNF'?null:s.penalty==='+2'&&s.time_ms!==null?s.time_ms+2000:s.penalty==='DNS'?null:s.time_ms;g.get(cId)!.push(t)}
-    const rows:{competitor_id:string;username:string;display_name:string|null;solves:(number|null)[]}[]=[];
+    const rows:LeaderboardRow[]=[];
     for(const[cId,s] of g){rows.push({competitor_id:cId,...m.get(cId)!,solves:s})}
     rows.sort((a,b)=>{const ra=calculateResult(a.solves,format);const rb=calculateResult(b.solves,format);if(ra==='DNF'&&rb==='DNF')return 0;if(ra==='DNF')return 1;if(rb==='DNF')return -1;if(ra===null)return 1;if(rb===null)return -1;return(ra as number)-(rb as number)});
     setSolves(rows);setLoading(false);
-  };go();},[roundId]);
+  }, [roundId, format]);
+
+  // Initial fetch
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Supabase Realtime subscription for live updates
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`leaderboard-${roundId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'solves', filter: `round_id=eq.${roundId}` },
+        () => {
+          // Debounce rapid-fire changes
+          if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+          refreshTimerRef.current = setTimeout(() => {
+            fetchData();
+            setLive(true);
+          }, 300);
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') setLive(true);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
+  }, [roundId, fetchData]);
 
   if(loading)return<div className="flex items-center justify-center py-8"><CubeIcon className="h-6 w-6 text-text-tertiary/30 animate-pulse"/></div>;
   if(solves.length===0)return<div className="flex flex-col items-center gap-2 py-8"><CubeIcon className="h-8 w-8 text-text-tertiary/30"/><p className="text-sm text-text-secondary">No times submitted yet.</p></div>;
@@ -33,6 +68,13 @@ export function RoundLeaderboard({ roundId,eventKey,format,solveCount }:Props) {
   const topLabels=['1st','2nd','3rd'];
 
   return <div className="overflow-x-auto">
+    {live && (
+      <div className="mb-3 flex items-center gap-1.5">
+        <Badge variant="outline" className="gap-1 border-cube-green/30 text-cube-green text-[10px]">
+          <Radio className="h-2.5 w-2.5 animate-pulse" /> Live
+        </Badge>
+      </div>
+    )}
     <Table>
       <TableHeader><TableRow className="hover:bg-transparent border-border/30">
         <TableHead className="w-10 text-xs uppercase tracking-wider text-text-tertiary">#</TableHead>
@@ -42,7 +84,7 @@ export function RoundLeaderboard({ roundId,eventKey,format,solveCount }:Props) {
       </TableRow></TableHeader>
       <TableBody>
         {solves.map((row,idx)=>{const r=calculateResult(row.solves,format);
-        return<TableRow key={row.competitor_id} className={idx<3?'bg-surface-hover/30 border-border/30':'border-border/30'}>
+        return<TableRow key={row.competitor_id} className={`${idx<3?'bg-surface-hover/30 border-border/30':'border-border/30'} transition-colors duration-300`}>
           <TableCell className="font-mono text-sm font-bold">
             {idx<3?<span className={`inline-flex items-center justify-center gap-1 rounded-md border px-2 py-0.5 text-xs ${topColors[idx]}`}>{topIcons[idx]}{topLabels[idx]}</span>:<span className="text-text-tertiary">{idx+1}</span>}
           </TableCell>

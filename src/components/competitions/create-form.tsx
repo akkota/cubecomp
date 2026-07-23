@@ -66,9 +66,10 @@ export function CreateCompetitionForm() {
       if (!user) { toast.error('You must be logged in'); router.push('/login'); return; }
 
       const generateScrambles = (document.getElementById('generate-scrambles') as HTMLInputElement)?.checked ?? true;
+      const allowSpectators = (document.getElementById('allow-spectators') as HTMLInputElement)?.checked ?? false;
       const { data: comp, error: compError } = await supabase
         .from('competitions')
-        .insert({ name: data.name, description: data.description || '', created_by: user.id, generate_scrambles: generateScrambles })
+        .insert({ name: data.name, description: data.description || '', created_by: user.id, generate_scrambles: generateScrambles, allow_spectators: allowSpectators })
         .select().single();
 
       if (compError) throw compError;
@@ -147,6 +148,16 @@ export function CreateCompetitionForm() {
                 <p className="text-xs text-muted-foreground">Auto-generate WCA scrambles for every round. Turn off to only record times without scrambles.</p>
               </div>
               <Switch id="generate-scrambles" defaultChecked />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border/50 p-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="allow-spectators" className="flex items-center gap-2 text-sm font-medium">
+                  <Trophy className="h-4 w-4 text-cube-green" />
+                  Allow Spectators
+                </Label>
+                <p className="text-xs text-muted-foreground">Let non-registered users view scrambles and leaderboards without competing.</p>
+              </div>
+              <Switch id="allow-spectators" />
             </div>
           </CardContent>
         </Card>

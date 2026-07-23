@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { createClient } from '@/lib/supabase/client';
 import { getEventByKey } from '@/lib/wca-events';
 import { RoundLeaderboard } from '@/components/competitions/leaderboard';
+import { CubeTimer } from '@/components/competitions/cube-timer';
 import { submitTimesAction } from '@/actions/submitTimes';
 import { toast } from 'sonner';
 import { Clock, Lock, Send, AlertTriangle, CuboidIcon as CubeIcon, Trophy, Timer, ShuffleIcon } from 'lucide-react';
@@ -42,9 +43,21 @@ export default function RoundPage() {
     const { data: comp } = await supabase.from('competitions').select('*').eq('id', params.id).single();
     setCompetition(comp);
     // Access check
-    if (!user) { setAccessState('blocked_registration'); } else {
+    const isSpectator = comp?.allow_spectators === true;
+    if (!user) {
+      // Not logged in: only view if spectator mode is on and round is active/completed
+      if (isSpectator && r.status !== 'pending') { setAccessState('granted'); }
+      else { setAccessState('blocked_registration'); }
+    } else if (user.id === comp?.created_by) {
+      // Owner always has full access
+      setAccessState('granted');
+    } else {
       const { data: competitor } = await supabase.from('competitors').select('id').eq('competition_id', params.id).eq('user_id', user.id).maybeSingle();
-      if (!competitor) { setAccessState('blocked_registration'); }
+      if (!competitor) {
+        // Not registered: spectator if allowed and round is active/completed
+        if (isSpectator && r.status !== 'pending') { setAccessState('granted'); }
+        else { setAccessState('blocked_registration'); }
+      }
       else if (r.status === 'pending') { setAccessState('blocked_round_locked'); }
       else if (parseInt(params.n) > 1) {
         const { data: p } = await supabase.from('round_participants').select('id').eq('round_id', r.id).eq('competitor_id', competitor.id).maybeSingle();
@@ -145,6 +158,32 @@ export default function RoundPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Stackmat Timer */}
+      {accessState==='granted'&&round?.status==='active'&&(
+        <CubeTimer
+          solveIndex={Object.keys(times).length}
+          solveLabel={`Solve ${Object.keys(times).length + 1}/${solveCount}`}
+          currentValue={''}
+          onTimeRecorded={(timeMs) => {
+            if (timeMs === 0) return; // reset, don't auto-fill
+            const nextSolve = Object.keys(times).length + 1;
+            if (nextSolve > solveCount) {
+              toast.warning(`All ${solveCount} solves accounted for — submit below`);
+              return;
+            }
+            const timeStr = (timeMs / 1000).toFixed(2);
+            setTimes(p => ({ ...p, [nextSolve]: timeStr }));
+            toast.success(`Solve ${nextSolve}: ${timeStr}`);
+          }}
+          onPenalty={(penalty) => {
+            const lastSolve = Math.max(...Object.keys(times).map(Number), 0);
+            if (lastSolve > 0) {
+              setPenalties(p => ({ ...p, [lastSolve]: penalty || 'none' }));
+            }
+          }}
+        />
       )}
 
       {/* Time Entry */}
