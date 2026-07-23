@@ -47,8 +47,10 @@ export function Navbar() {
   };
 
   const linkClass = (p: string) =>
-    `text-sm font-medium transition-colors duration-150 ${
-      pathname === p ? 'text-foreground' : 'text-text-secondary hover:text-foreground'
+    `relative text-sm font-medium transition-colors duration-200 ${
+      pathname === p
+        ? 'text-foreground'
+        : 'text-text-secondary hover:text-foreground'
     }`;
 
   return (
@@ -64,8 +66,14 @@ export function Navbar() {
 
         {/* Desktop */}
         <nav className="hidden md:flex items-center gap-6">
-          <Link href="/" className={linkClass('/')}>Competitions</Link>
-          {!loading && user && <Link href="/dashboard" className={linkClass('/dashboard')}>Dashboard</Link>}
+          <Link href="/" className={linkClass('/')}>
+            Competitions
+            {pathname === '/' && <span className="absolute -bottom-[18px] left-1/2 -translate-x-1/2 h-[2px] w-8 rounded-full bg-cube-blue" />}
+          </Link>
+          {!loading && user && <Link href="/dashboard" className={linkClass('/dashboard')}>
+            Dashboard
+            {pathname === '/dashboard' && <span className="absolute -bottom-[18px] left-1/2 -translate-x-1/2 h-[2px] w-8 rounded-full bg-cube-blue" />}
+          </Link>}
           {!loading && (user ? (
             <div className="flex items-center gap-3">
               <span className="hidden lg:block rounded-full bg-surface-hover px-3 py-1 text-xs text-text-secondary">{user.email}</span>

@@ -170,30 +170,41 @@ export default function HomePage() {
                     </CardContent>
                   </Card>
                 ) : (
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {list.map(comp => (
+                  <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                    {list.map(comp => {
+                      const Icon = STATUS_UI[comp.displayStatus]?.icon || Clock;
+                      return (
                       <Link key={comp.id} href={`/competitions/${comp.id}`} className="group block">
-                        <Card className="h-full border-border/30 transition-all duration-300 hover:border-cube-blue/20 hover:shadow-md hover:-translate-y-1 hover:shadow-glow-blue/20">
+                        <Card className="h-full border-border/20 transition-all duration-300 hover:border-cube-blue/20 hover:shadow-lg hover:-translate-y-1.5 hover:shadow-glow-blue/10">
                           <CardHeader className="pb-3">
-                            <CardTitle className="line-clamp-1 text-lg group-hover:text-cube-blue transition-colors">
-                              {comp.name}
-                            </CardTitle>
-                            <CardDescription className="flex items-center gap-1 text-xs">
+                            <div className="flex items-start justify-between gap-2">
+                              <CardTitle className="line-clamp-1 text-lg group-hover:text-cube-blue transition-colors">
+                                {comp.name}
+                              </CardTitle>
+                              <div className={`shrink-0 rounded-md p-1.5 ${
+                                comp.displayStatus === 'ongoing' ? 'bg-cube-green/10 text-cube-green' :
+                                comp.displayStatus === 'completed' ? 'bg-surface-hover text-text-tertiary' :
+                                'bg-cube-blue/10 text-cube-blue'
+                              }`}>
+                                <Icon className="h-4 w-4" />
+                              </div>
+                            </div>
+                            <CardDescription className="flex items-center gap-1.5 text-xs">
                               <Calendar className="h-3 w-3" />
                               {new Date(comp.created_at).toLocaleDateString('en-US', {
                                 month: 'short', day: 'numeric', year: 'numeric',
                               })}
                             </CardDescription>
                           </CardHeader>
-                          <CardContent className="flex items-center justify-between">
-                            <Badge variant={STATUS_UI[comp.displayStatus].variant}>
+                          <CardContent className="flex items-center justify-between pt-0">
+                            <Badge variant={STATUS_UI[comp.displayStatus].variant} className="transition-colors">
                               {STATUS_UI[comp.displayStatus].label}
                             </Badge>
-                            <ArrowRight className="h-4 w-4 text-text-tertiary opacity-0 transition-all duration-300 group-hover:opacity-100 group-hover:translate-x-0.5" />
+                            <ArrowRight className="h-4 w-4 text-text-tertiary opacity-0 transition-all duration-300 group-hover:opacity-100 group-hover:translate-x-1" />
                           </CardContent>
                         </Card>
                       </Link>
-                    ))}
+                    )})}
                   </div>
                 )}
               </TabsContent>
@@ -216,40 +227,41 @@ function HeroSection() {
       </div>
       <div className="pointer-events-none absolute inset-0 bg-cube-grid opacity-[0.06] dark:opacity-[0.03]" />
 
-      <div className="relative z-10 flex flex-col items-center gap-12 px-6 py-16 sm:px-12 sm:py-20 lg:flex-row lg:items-center lg:justify-between lg:gap-16 lg:px-16 lg:py-24">
+      <div className="relative z-10 flex flex-col items-center gap-10 px-6 py-16 sm:px-12 sm:py-24 lg:flex-row lg:items-center lg:justify-between lg:gap-20 lg:px-16 lg:py-28">
         <div className="max-w-xl text-center lg:text-left">
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cube-blue/20 bg-cube-blue/5 px-3 py-1 text-xs font-medium text-cube-blue">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-cube-blue/20 bg-cube-blue/5 px-4 py-1.5 text-xs font-medium text-cube-blue">
             <Zap className="h-3 w-3" />
-            17 WCA events · multi-round · live leaderboards
+            <span>17 WCA events · multi-round · live leaderboards</span>
           </div>
-          <h1 className="mb-4 text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl">
+          <h1 className="mb-5 text-4xl font-extrabold leading-[1.08] tracking-tight sm:text-5xl lg:text-7xl">
             Compete.<br />
             <span className="text-gradient">Solve.</span>{' '}
             <span className="text-cube-red">Climb.</span>
           </h1>
-          <p className="mb-8 text-base leading-relaxed text-text-secondary sm:text-lg">
-            Create and join online Rubik&apos;s Cube competitions with official
+          <p className="mb-8 max-w-md text-base leading-relaxed text-text-secondary sm:text-lg lg:text-xl">
+            Run and join online Rubik&apos;s Cube competitions with official
             WCA-format events, instant scrambles, and real-time leaderboards.
           </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-center lg:justify-start">
             <Link href="/competitions/new">
-              <Button size="lg" className="gap-2 shadow-md shadow-cube-blue/20">
+              <Button size="lg" className="gap-2 shadow-md shadow-cube-blue/20 h-12 px-6 text-base">
                 <Trophy className="h-5 w-5" />
                 Create Competition
-                <ArrowRight className="h-4 w-4" />
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Button>
             </Link>
-            <Link href="/dashboard">
-              <Button variant="outline" size="lg" className="gap-2">
+            <Link href="/competitions">
+              <Button variant="outline" size="lg" className="gap-2 h-12 px-6 text-base">
                 <BarChart3 className="h-5 w-5" />
-                Dashboard
+                Browse Events
               </Button>
             </Link>
           </div>
         </div>
         <div className="flex-shrink-0">
           <div className="relative">
-            <div className="absolute inset-0 scale-150 rounded-full bg-cube-blue/10 blur-3xl" />
+            <div className="absolute inset-0 -inset-4 rounded-full bg-cube-blue/10 blur-3xl" />
+            <div className="absolute -inset-8 rounded-full bg-cube-green/5 blur-2xl" />
             <RotatingCube className="relative z-10" />
           </div>
         </div>
