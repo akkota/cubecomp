@@ -10,22 +10,17 @@ import { Menu, X } from 'lucide-react';
 function CubeLogo({ className = 'h-7 w-7' }: { className?: string }) {
   return (
     <svg viewBox="0 0 32 32" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* 3D cube icon */}
       <g transform="rotate(15 16 16)">
-        {/* Top face */}
-        <polygon points="16,2 30,10 16,18 2,10" fill="var(--cube-white)" stroke="currentColor" strokeWidth="0.8" />
-        {/* Front right face */}
-        <polygon points="30,10 30,24 16,32 16,18" fill="var(--cube-red)" stroke="currentColor" strokeWidth="0.8" strokeOpacity="0.4" />
-        {/* Front left face */}
-        <polygon points="2,10 16,18 16,32 2,24" fill="var(--cube-blue)" stroke="currentColor" strokeWidth="0.8" strokeOpacity="0.4" />
-        {/* Grid lines on faces */}
-        <line x1="8" y1="12" x2="24" y2="12" stroke="currentColor" strokeWidth="0.5" opacity="0.6" />
-        <line x1="16" y1="2" x2="16" y2="32" stroke="currentColor" strokeWidth="0.5" opacity="0.6" />
-        <line x1="8" y1="17" x2="24" y2="17" stroke="currentColor" strokeWidth="0.5" opacity="0.6" />
-        <line x1="2" y1="10" x2="2" y2="24" stroke="currentColor" strokeWidth="0.5" opacity="0.6" />
-        <line x1="30" y1="10" x2="30" y2="24" stroke="currentColor" strokeWidth="0.5" opacity="0.6" />
-        <line x1="2" y1="17" x2="16" y2="17" stroke="currentColor" strokeWidth="0.5" opacity="0.6" />
-        <line x1="16" y1="17" x2="30" y2="17" stroke="currentColor" strokeWidth="0.5" opacity="0.6" />
+        <polygon points="16,2 30,10 16,18 2,10" fill="var(--cube-white)" stroke="currentColor" strokeWidth="0.8"/>
+        <polygon points="30,10 30,24 16,32 16,18" fill="var(--cube-red)" stroke="currentColor" strokeWidth="0.8" strokeOpacity="0.4"/>
+        <polygon points="2,10 16,18 16,32 2,24" fill="var(--cube-blue)" stroke="currentColor" strokeWidth="0.8" strokeOpacity="0.4"/>
+        <line x1="8" y1="12" x2="24" y2="12" stroke="currentColor" strokeWidth="0.5" opacity="0.6"/>
+        <line x1="16" y1="2" x2="16" y2="32" stroke="currentColor" strokeWidth="0.5" opacity="0.6"/>
+        <line x1="8" y1="17" x2="24" y2="17" stroke="currentColor" strokeWidth="0.5" opacity="0.6"/>
+        <line x1="2" y1="10" x2="2" y2="24" stroke="currentColor" strokeWidth="0.5" opacity="0.6"/>
+        <line x1="30" y1="10" x2="30" y2="24" stroke="currentColor" strokeWidth="0.5" opacity="0.6"/>
+        <line x1="2" y1="17" x2="16" y2="17" stroke="currentColor" strokeWidth="0.5" opacity="0.6"/>
+        <line x1="16" y1="17" x2="30" y2="17" stroke="currentColor" strokeWidth="0.5" opacity="0.6"/>
       </g>
     </svg>
   );
@@ -40,10 +35,7 @@ export function Navbar() {
   const supabase = createClient();
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-      setLoading(false);
-    });
+    supabase.auth.getUser().then(({ data }) => { setUser(data.user); setLoading(false); });
   }, []);
 
   const handleSignOut = async () => {
@@ -54,14 +46,15 @@ export function Navbar() {
     router.refresh();
   };
 
+  const linkClass = (p: string) =>
+    `text-sm font-medium transition-colors duration-150 ${
+      pathname === p ? 'text-foreground' : 'text-text-secondary hover:text-foreground'
+    }`;
+
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4">
-        <Link
-          href="/"
-          className="group flex items-center gap-2.5"
-          onClick={() => setMobileOpen(false)}
-        >
+    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-xl">
+      <div className="mx-auto flex h-14 max-w-[1200px] items-center justify-between px-4 sm:px-6">
+        <Link href="/" className="group flex items-center gap-2.5 shrink-0" onClick={() => setMobileOpen(false)}>
           <CubeLogo className="h-7 w-7 transition-transform duration-300 group-hover:scale-110" />
           <span className="text-lg font-bold tracking-tight">
             <span className="text-cube-blue">Cube</span>
@@ -69,118 +62,45 @@ export function Navbar() {
           </span>
         </Link>
 
-        {/* Desktop nav */}
+        {/* Desktop */}
         <nav className="hidden md:flex items-center gap-6">
-          <Link
-            href="/"
-            className={`text-sm font-medium transition-colors hover:text-foreground ${
-              pathname === '/' ? 'text-foreground' : 'text-muted-foreground'
-            }`}
-          >
-            Competitions
-          </Link>
-
-          {!loading && user && (
-            <Link
-              href="/dashboard"
-              className={`text-sm font-medium transition-colors hover:text-foreground ${
-                pathname === '/dashboard' ? 'text-foreground' : 'text-muted-foreground'
-              }`}
-            >
-              Dashboard
-            </Link>
-          )}
-
-          {!loading && (
-            user ? (
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5 text-xs text-muted-foreground">
-                  <span className="hidden lg:inline">{user.email}</span>
-                  <span className="lg:hidden">Account</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleSignOut}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  Sign Out
-                </Button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Link href="/login">
-                  <Button variant="ghost" size="sm">Log In</Button>
-                </Link>
-                <Link href="/signup">
-                  <Button size="sm">Sign Up</Button>
-                </Link>
-              </div>
-            )
-          )}
+          <Link href="/" className={linkClass('/')}>Competitions</Link>
+          {!loading && user && <Link href="/dashboard" className={linkClass('/dashboard')}>Dashboard</Link>}
+          {!loading && (user ? (
+            <div className="flex items-center gap-3">
+              <span className="hidden lg:block rounded-full bg-surface-hover px-3 py-1 text-xs text-text-secondary">{user.email}</span>
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-text-secondary">Sign Out</Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Link href="/login"><Button variant="ghost" size="sm">Log In</Button></Link>
+              <Link href="/signup"><Button size="sm" className="shadow-sm">Sign Up</Button></Link>
+            </div>
+          ))}
         </nav>
 
-        {/* Mobile hamburger */}
-        <button
-          className="md:hidden p-2 text-muted-foreground hover:text-foreground"
-          onClick={() => setMobileOpen(!mobileOpen)}
-          aria-label="Toggle menu"
-        >
+        {/* Mobile toggle */}
+        <button className="md:hidden p-2 text-text-secondary" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Toggle menu">
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
       </div>
 
-      {/* Mobile nav */}
       {mobileOpen && (
-        <div className="md:hidden border-t border-border/60 bg-background/95 backdrop-blur-xl">
-          <div className="flex flex-col gap-1 px-4 py-4">
-            <Link
-              href="/"
-              className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
-              onClick={() => setMobileOpen(false)}
-            >
-              Competitions
-            </Link>
-            {user && (
-              <Link
-                href="/dashboard"
-                className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
-                onClick={() => setMobileOpen(false)}
-              >
-                Dashboard
-              </Link>
-            )}
-            {user ? (
-              <>
-                <div className="border-t border-border/40 my-2" />
-                <span className="px-3 py-1 text-xs text-muted-foreground">{user.email}</span>
-                <button
-                  onClick={handleSignOut}
-                  className="rounded-md px-3 py-2 text-left text-sm font-medium text-destructive hover:bg-destructive/10"
-                >
-                  Sign Out
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="border-t border-border/40 my-2" />
-                <Link
-                  href="/login"
-                  className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  Log In
-                </Link>
-                <Link
-                  href="/signup"
-                  className="rounded-md px-3 py-2 text-sm font-medium text-cube-blue hover:bg-accent"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  Sign Up
-                </Link>
-              </>
-            )}
-          </div>
+        <div className="md:hidden border-t border-border/40 bg-surface/95 backdrop-blur-xl p-4 space-y-1">
+          <Link href="/" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Competitions</Link>
+          {user && <Link href="/dashboard" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Dashboard</Link>}
+          {user ? (
+            <>
+              <div className="border-t border-border/40 my-2" />
+              <span className="block px-3 py-1 text-xs text-text-secondary">{user.email}</span>
+              <button onClick={handleSignOut} className="block w-full rounded-md px-3 py-2 text-left text-sm font-medium text-destructive hover:bg-destructive/10">Sign Out</button>
+            </>
+          ) : (
+            <>
+              <Link href="/login" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Log In</Link>
+              <Link href="/signup" className="block rounded-md px-3 py-2 text-sm font-medium text-cube-blue hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Sign Up</Link>
+            </>
+          )}
         </div>
       )}
     </header>

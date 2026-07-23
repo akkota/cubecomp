@@ -1,22 +1,20 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { createClient } from '@/lib/supabase/client';
-import { getEventByKey, formatTime } from '@/lib/wca-events';
+import { getEventByKey } from '@/lib/wca-events';
 import { RoundLeaderboard } from '@/components/competitions/leaderboard';
 import { submitTimesAction } from '@/actions/submitTimes';
 import { toast } from 'sonner';
-import { Clock, Lock, Send, AlertTriangle, CuboidIcon as CubeIcon, Trophy } from 'lucide-react';
+import { Clock, Lock, Send, AlertTriangle, CuboidIcon as CubeIcon, Trophy, Timer } from 'lucide-react';
 
 type ScrambleEntry = { id: string; scramble_number: number; scramble: string };
-type SolveEntry = { solve_number: number; time_ms: number | null; penalty: string };
-
 type AccessState = 'loading' | 'granted' | 'blocked_registration' | 'blocked_qualification' | 'blocked_round_locked';
 
 export default function RoundPage() {
@@ -25,397 +23,132 @@ export default function RoundPage() {
   const [round, setRound] = useState<any>(null);
   const [competition, setCompetition] = useState<any>(null);
   const [scrambles, setScrambles] = useState<ScrambleEntry[]>([]);
-  const [existingSolves, setExistingSolves] = useState<SolveEntry[]>([]);
   const [times, setTimes] = useState<Record<number, string>>({});
   const [penalties, setPenalties] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const submittingRef = useRef(false);
   const [accessState, setAccessState] = useState<AccessState>('loading');
-  const [user, setUser] = useState<any>(null);
+  const submittingRef = useRef(false);
   const supabase = createClient();
 
-  useEffect(() => {
-    const fetch = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-
-      // Get competition event
-      const { data: cEvent } = await supabase
-        .from('competition_events')
-        .select('*')
-        .eq('competition_id', params.id)
-        .eq('event_key', params.event)
-        .single();
-
-      if (!cEvent) { toast.error('Event not found'); return; }
-      setCompEvent(cEvent);
-
-      // Get round
-      const { data: r } = await supabase
-        .from('rounds')
-        .select('*')
-        .eq('competition_event_id', cEvent.id)
-        .eq('round_number', parseInt(params.n))
-        .single();
-
-      if (!r) { toast.error('Round not found'); return; }
-      setRound(r);
-
-      // Get competition
-      const { data: comp } = await supabase
-        .from('competitions')
-        .select('*')
-        .eq('id', params.id)
-        .single();
-      setCompetition(comp);
-
-      // Determine access state
-      if (!user) {
-        setAccessState('blocked_registration');
-      } else {
-        // Check if user is registered as competitor
-        const { data: competitor } = await supabase
-          .from('competitors')
-          .select('id')
-          .eq('competition_id', params.id)
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (!competitor) {
-          setAccessState('blocked_registration');
-        } else if (r.status === 'pending') {
-          setAccessState('blocked_round_locked');
-        } else if (parseInt(params.n) > 1) {
-          // Round 2+: check qualification
-          const { data: participant } = await supabase
-            .from('round_participants')
-            .select('id')
-            .eq('round_id', r.id)
-            .eq('competitor_id', competitor.id)
-            .maybeSingle();
-
-          if (!participant) {
-            setAccessState('blocked_qualification');
-          } else {
-            setAccessState('granted');
-          }
-        } else {
-          setAccessState('granted');
-        }
-
-        // Fetch existing solves if competitor exists
-        if (competitor) {
-          const { data: sol } = await supabase
-            .from('solves')
-            .select('*')
-            .eq('round_id', r.id)
-            .eq('competitor_id', competitor.id)
-            .order('solve_number');
-          if (sol) {
-            const solveEntries = sol.map(s => ({
-              solve_number: s.solve_number,
-              time_ms: s.time_ms,
-              penalty: s.penalty,
-            }));
-            setExistingSolves(solveEntries);
-            const timeMap: Record<number, string> = {};
-            const penaltyMap: Record<number, string> = {};
-            for (const s of solveEntries) {
-              if (s.time_ms !== null) timeMap[s.solve_number] = (s.time_ms / 1000).toFixed(2);
-              penaltyMap[s.solve_number] = s.penalty === 'none' ? '' : s.penalty;
-            }
-            setTimes(timeMap);
-            setPenalties(penaltyMap);
-          }
+  useEffect(() => { const run = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: cEvent } = await supabase.from('competition_events').select('*').eq('competition_id', params.id).eq('event_key', params.event).single();
+    if (!cEvent) { toast.error('Event not found'); return; }
+    setCompEvent(cEvent);
+    const { data: r } = await supabase.from('rounds').select('*').eq('competition_event_id', cEvent.id).eq('round_number', parseInt(params.n)).single();
+    if (!r) { toast.error('Round not found'); return; }
+    setRound(r);
+    const { data: comp } = await supabase.from('competitions').select('*').eq('id', params.id).single();
+    setCompetition(comp);
+    // Access check
+    if (!user) { setAccessState('blocked_registration'); } else {
+      const { data: competitor } = await supabase.from('competitors').select('id').eq('competition_id', params.id).eq('user_id', user.id).maybeSingle();
+      if (!competitor) { setAccessState('blocked_registration'); }
+      else if (r.status === 'pending') { setAccessState('blocked_round_locked'); }
+      else if (parseInt(params.n) > 1) {
+        const { data: p } = await supabase.from('round_participants').select('id').eq('round_id', r.id).eq('competitor_id', competitor.id).maybeSingle();
+        setAccessState(p ? 'granted' : 'blocked_qualification');
+      } else { setAccessState('granted'); }
+      // Load existing solves
+      if (competitor) {
+        const { data: sol } = await supabase.from('solves').select('*').eq('round_id', r.id).eq('competitor_id', competitor.id).order('solve_number');
+        if (sol) {
+          const tm: Record<number,string>={}; const pm: Record<number,string>={};
+          for (const s of sol) { tm[s.solve_number] = s.time_ms!==null ? (s.time_ms/1000).toFixed(2):''; pm[s.solve_number]=s.penalty==='none'?'':s.penalty; }
+          setTimes(tm); setPenalties(pm);
         }
       }
-
-      // Try fetching scrambles (RLS will filter if not eligible)
-      const { data: sc } = await supabase
-        .from('scrambles')
-        .select('*')
-        .eq('round_id', r.id)
-        .order('scramble_number');
-      setScrambles(sc ?? []);
-
-      setLoading(false);
-    };
-    fetch();
-  }, [params.id, params.event, params.n]);
+    }
+    const { data: sc } = await supabase.from('scrambles').select('*').eq('round_id', r.id).order('scramble_number');
+    setScrambles(sc ?? []);
+    setLoading(false);
+  }; run(); }, [params.id, params.event, params.n]);
 
   const wcaEvent = getEventByKey(params.event);
   const solveCount = wcaEvent?.solveCount ?? 5;
 
   const handleSubmit = async () => {
-    // Guard against double-clicks before React re-renders
     if (submittingRef.current) return;
-    submittingRef.current = true;
-    setSubmitting(true);
-
-    const solvesToSubmit = [];
-    for (let i = 1; i <= solveCount; i++) {
-      const raw = times[i]?.trim();
-      const penalty = penalties[i] || 'none';
-
-      if (!raw) continue; // Skip empty solves
-
-      if (raw.toUpperCase() === 'DNF') {
-        solvesToSubmit.push({
-          solve_number: i,
-          time_ms: null,
-          penalty: 'DNF',
-        });
-        continue;
-      }
-
-      const seconds = parseFloat(raw);
-      if (isNaN(seconds) || seconds < 0) {
-        toast.error(`Invalid time for solve ${i}`);
-        return;
-      }
-
-      solvesToSubmit.push({
-        solve_number: i,
-        time_ms: Math.round(seconds * 1000),
-        penalty,
-      });
+    submittingRef.current = true; setSubmitting(true);
+    const solves: {solve_number:number;time_ms:number|null;penalty:string}[] = [];
+    for (let i=1;i<=solveCount;i++) {
+      const raw = times[i]?.trim(); const p = penalties[i]||'none';
+      if (!raw) continue;
+      if (raw.toUpperCase()==='DNF') { solves.push({solve_number:i,time_ms:null,penalty:'DNF'}); continue; }
+      const s = parseFloat(raw);
+      if (isNaN(s)||s<0) { toast.error(`Invalid time for solve ${i}`); setSubmitting(false);submittingRef.current=false; return; }
+      solves.push({solve_number:i,time_ms:Math.round(s*1000),penalty:p});
     }
-
-    if (solvesToSubmit.length === 0) {
-      toast.error('Enter at least one time');
-      return;
-    }
-
-    setSubmitting(true);
-
+    if (solves.length===0) { toast.error('Enter at least one time'); setSubmitting(false);submittingRef.current=false; return; }
     try {
-      const result = await submitTimesAction(round.id, params.id, solvesToSubmit);
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
+      const r = await submitTimesAction(round.id, params.id, solves);
+      if (!r.success) { toast.error(r.error); return; }
       toast.success('Times submitted!');
-
-      // Refresh solves display
-      const { data: { user } } = await supabase.auth.getUser();
-      const { data: competitor } = await supabase
-        .from('competitors')
-        .select('id')
-        .eq('competition_id', params.id)
-        .eq('user_id', user!.id)
-        .single();
-
-      if (competitor) {
-        const { data: sol } = await supabase
-          .from('solves')
-          .select('*')
-          .eq('round_id', round.id)
-          .eq('competitor_id', competitor.id)
-          .order('solve_number');
-        if (sol) {
-          const solveEntries = sol.map(s => ({
-            solve_number: s.solve_number,
-            time_ms: s.time_ms,
-            penalty: s.penalty,
-          }));
-          setExistingSolves(solveEntries);
-          const timeMap: Record<number, string> = {};
-          const penaltyMap: Record<number, string> = {};
-          for (const s of solveEntries) {
-            if (s.time_ms !== null) timeMap[s.solve_number] = (s.time_ms / 1000).toFixed(2);
-            penaltyMap[s.solve_number] = s.penalty === 'none' ? '' : s.penalty;
-          }
-          setTimes(timeMap);
-          setPenalties(penaltyMap);
-        }
+      // Refresh
+      const {data:{user}} = await supabase.auth.getUser();
+      const {data:comp} = await supabase.from('competitors').select('id').eq('competition_id',params.id).eq('user_id',user!.id).single();
+      if (comp) {
+        const {data:sol} = await supabase.from('solves').select('*').eq('round_id',round.id).eq('competitor_id',comp.id).order('solve_number');
+        if (sol) { const tm:Record<number,string>={};const pm:Record<number,string>={};for(const s of sol){tm[s.solve_number]=s.time_ms!==null?(s.time_ms/1000).toFixed(2):'';pm[s.solve_number]=s.penalty==='none'?'':s.penalty;}setTimes(tm);setPenalties(pm);}
       }
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to submit times');
-    } finally {
-      setSubmitting(false);
-      submittingRef.current = false;
-    }
+    } catch(e:any){ toast.error(e.message||'Failed'); }
+    finally { setSubmitting(false); submittingRef.current = false; }
   };
 
-  // --- Blocked states ---
-  const renderBlockedMessage = () => {
-    if (accessState === 'blocked_registration') {
-      return (
-        <Card className="mb-6 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
-          <CardContent className="flex items-center gap-3 py-6">
-            <AlertTriangle className="h-5 w-5 text-amber-600" />
-            <div>
-              <p className="font-medium">Not registered</p>
-              <p className="text-sm text-muted-foreground">
-                You need to register for this competition before you can view scrambles or submit times.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      );
-    }
+  if (loading) return <div className="flex items-center justify-center py-20"><CubeIcon className="h-8 w-8 text-text-tertiary/30 animate-pulse"/></div>;
 
-    if (accessState === 'blocked_qualification') {
-      return (
-        <Card className="mb-6 border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950">
-          <CardContent className="flex items-center gap-3 py-6">
-            <Lock className="h-5 w-5 text-red-600" />
-            <div>
-              <p className="font-medium">Not qualified</p>
-              <p className="text-sm text-muted-foreground">
-                You did not place high enough in the previous round to qualify for this round.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      );
-    }
-
-    if (accessState === 'blocked_round_locked') {
-      return (
-        <Card className="mb-6 border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
-          <CardContent className="flex items-center gap-3 py-6">
-            <Clock className="h-5 w-5 text-blue-600" />
-            <div>
-              <p className="font-medium">Round not yet open</p>
-              <p className="text-sm text-muted-foreground">
-                This round hasn&apos;t started yet. Check back once the previous round is finalized and advancement is calculated.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      );
-    }
-
-    return null;
-  };
-
-  if (loading) return (
-    <div className="flex items-center justify-center py-20">
-      <div className="animate-pulse text-center">
-        <CubeIcon className="mx-auto h-8 w-8 text-muted-foreground/40" />
-        <p className="mt-3 text-sm text-muted-foreground">Loading round...</p>
-      </div>
-    </div>
+  const Blocked = ({icon:Icon,title,desc,color}:{icon:any;title:string;desc:string;color:string})=>(
+    <Card className={`mb-6 border-l-4 ${color}`}><CardContent className="flex items-start gap-3 py-4"><Icon className={`h-5 w-5 shrink-0 mt-0.5 ${color.replace('bg-','text-').replace('border-','text-')}`}/><div><p className="font-medium">{title}</p><p className="text-sm text-text-secondary">{desc}</p></div></CardContent></Card>
   );
 
   return (
-    <div>
-      {/* Page header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">
-          {competition?.name}
-        </h1>
-        <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-          <span className="text-lg">{wcaEvent?.icon}</span>
-          {wcaEvent?.name} <span className="text-muted-foreground/50">—</span> Round {params.n}
-          {round && (
-            <Badge variant={
-              round.status === 'active' ? 'destructive' :
-              round.status === 'completed' ? 'secondary' : 'outline'
-            }>
-              {round.status}
-            </Badge>
-          )}
-        </p>
+    <div className="max-w-2xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">{competition?.name}</h1>
+          <p className="flex items-center gap-2 text-sm text-text-secondary mt-0.5">
+            <span>{wcaEvent?.icon}</span> {wcaEvent?.name} — Round {params.n}
+            {round && <Badge variant={round.status==='active'?'destructive':round.status==='completed'?'secondary':'outline'}>{round.status}</Badge>}
+          </p>
+        </div>
+        {accessState==='granted'&&round?.status==='active'&&<Button onClick={handleSubmit} disabled={submitting} size="sm" className="gap-2"><Send className="h-4 w-4"/>{submitting?'Saving…':'Submit Times'}</Button>}
       </div>
 
-      {/* Access blocked message */}
-      {renderBlockedMessage()}
+      {/* Blocked states */}
+      {accessState==='blocked_registration'&&<Blocked icon={AlertTriangle} title="Not registered" desc="Register for this competition to view scrambles and submit times." color="border-cube-yellow/50 bg-cube-yellow/5"/>}
+      {accessState==='blocked_qualification'&&<Blocked icon={Lock} title="Not qualified" desc="You didn't place high enough in the previous round to qualify." color="border-cube-red/30 bg-cube-red/5"/>}
+      {accessState==='blocked_round_locked'&&<Blocked icon={Clock} title="Round not yet open" desc="This round hasn't started. Check back after advancement is calculated." color="border-cube-blue/30 bg-cube-blue/5"/>}
 
       {/* Scrambles */}
-      {accessState === 'granted' && scrambles.length > 0 && (
-        <Card className="mb-6 border-border/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <CubeIcon className="h-4 w-4 text-cube-blue" />
-              Scrambles
-            </CardTitle>
-          </CardHeader>
+      {accessState==='granted'&&scrambles.length>0&&(
+        <Card className="border-border/30">
+          <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><CubeIcon className="h-4 w-4 text-cube-blue"/>Scrambles</CardTitle></CardHeader>
           <CardContent>
             <div className="grid gap-2 sm:grid-cols-2">
-              {scrambles.map(s => (
-                <div key={s.id} className="flex gap-2.5 rounded-lg border border-border/40 bg-muted/30 p-3 text-sm">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-cube-blue/10 text-xs font-bold text-cube-blue">
-                    {s.scramble_number}
-                  </span>
-                  <code className="font-mono text-xs leading-relaxed">{s.scramble}</code>
-                </div>
-              ))}
+              {scrambles.map(s=><div key={s.id} className="flex items-start gap-2.5 rounded-lg border border-border/40 bg-surface-hover/30 p-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-cube-blue/10 text-xs font-bold text-cube-blue">{s.scramble_number}</span><code className="font-mono text-xs leading-relaxed break-all">{s.scramble}</code></div>)}
             </div>
           </CardContent>
         </Card>
       )}
 
       {/* Time Entry */}
-      {accessState === 'granted' && round?.status === 'active' && (
-        <Card className="mb-6 border-border/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Clock className="h-4 w-4 text-cube-green" />
-              Enter Times
-            </CardTitle>
-          </CardHeader>
+      {accessState==='granted'&&round?.status==='active'&&(
+        <Card className="border-border/30">
+          <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Timer className="h-4 w-4 text-cube-green"/>Enter Times</CardTitle></CardHeader>
           <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from({ length: solveCount }, (_, i) => i + 1).map(sn => (
-                <div key={sn} className="flex items-end gap-2">
-                  <div className="flex-1 space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Solve {sn}
-                    </label>
-                    <Input
-                      type="text"
-                      placeholder="12.34 or DNF"
-                      value={times[sn] ?? ''}
-                      onChange={e => setTimes(prev => ({ ...prev, [sn]: e.target.value }))}
-                    />
-                  </div>
-                  <div className="w-20">
-                    <Select
-                      value={penalties[sn] ?? 'none'}
-                      onValueChange={v => setPenalties(prev => ({ ...prev, [sn]: v as string }))}
-                    >
-                      <SelectTrigger className="h-10">
-                        <SelectValue placeholder="Penalty" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="+2">+2</SelectItem>
-                        <SelectItem value="DNF">DNF</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 flex justify-end">
-              <Button onClick={handleSubmit} disabled={submitting}>
-                <Send className="mr-2 h-4 w-4" />
-                {submitting ? 'Saving...' : 'Submit Times'}
-              </Button>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {Array.from({length:solveCount},(_,i)=>i+1).map(sn=><div key={sn} className="flex items-end gap-2"><div className="flex-1 space-y-1"><label className="text-xs font-medium text-text-secondary">Solve {sn}</label><Input type="text" placeholder="12.34 or DNF" value={times[sn]??''} onChange={e=>setTimes(p=>({...p,[sn]:e.target.value}))} className="h-10 font-mono"/></div><div className="w-20"><Select value={penalties[sn]??'none'} onValueChange={v=>setPenalties(p=>({...p,[sn]:v??'none'}))}><SelectTrigger className="h-10"><SelectValue placeholder="—"/></SelectTrigger><SelectContent><SelectItem value="none">—</SelectItem><SelectItem value="+2">+2</SelectItem><SelectItem value="DNF">DNF</SelectItem></SelectContent></Select></div></div>)}
             </div>
           </CardContent>
         </Card>
       )}
 
       {/* Leaderboard */}
-      <Card className="border-border/50">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Trophy className="h-4 w-4 text-cube-yellow" />
-            Leaderboard
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <RoundLeaderboard
-            roundId={round.id}
-            eventKey={params.event}
-            format={compEvent?.event_format ?? 'average'}
-            solveCount={solveCount}
-          />
-        </CardContent>
+      <Card className="border-border/30">
+        <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Trophy className="h-4 w-4 text-cube-yellow"/>Leaderboard</CardTitle></CardHeader>
+        <CardContent><RoundLeaderboard roundId={round.id} eventKey={params.event} format={compEvent?.event_format??'average'} solveCount={solveCount}/></CardContent>
       </Card>
     </div>
   );

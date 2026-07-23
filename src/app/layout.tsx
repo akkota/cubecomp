@@ -11,16 +11,12 @@ export const metadata: Metadata = {
   description: 'Create and participate in online Rubik\'s Cube competitions',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.variable} min-h-screen bg-background antialiased`}>
+      <body className={`${inter.variable} min-h-screen bg-background font-sans antialiased`}>
         <Navbar />
-        <main className="container mx-auto px-4 py-8">
+        <main className="mx-auto max-w-[1200px] px-4 py-8 sm:px-6">
           {children}
         </main>
         <Toaster />
