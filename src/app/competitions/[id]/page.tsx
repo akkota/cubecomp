@@ -9,13 +9,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { createClient } from '@/lib/supabase/client';
 import { WCA_EVENTS } from '@/lib/wca-events';
 import { toast } from 'sonner';
-import { Trophy, Users, Clock } from 'lucide-react';
+import { Trophy, Users, Clock, Lock, CheckCircle2, XCircle, ArrowRight } from 'lucide-react';
 
 export default function CompetitionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [competition, setCompetition] = useState<any>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [rounds, setRounds] = useState<any[]>([]);
+  const [roundParticipation, setRoundParticipation] = useState<Set<string>>(new Set());
   const [isOwner, setIsOwner] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
   const [competitorCount, setCompetitorCount] = useState(0);
@@ -51,6 +52,27 @@ export default function CompetitionDetailPage() {
           .in('competition_event_id', eventIds)
           .order('round_number');
         setRounds(allRounds ?? []);
+
+        // Fetch round_participants for the current user (to show eligibility)
+        if (user) {
+          const { data: competitor } = await supabase
+            .from('competitors')
+            .select('id')
+            .eq('competition_id', id)
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (competitor) {
+            const roundIds = (allRounds ?? []).map(r => r.id);
+            const { data: participants } = await supabase
+              .from('round_participants')
+              .select('round_id')
+              .in('round_id', roundIds)
+              .eq('competitor_id', competitor.id);
+            const qualifiedRounds = new Set((participants ?? []).map(p => p.round_id));
+            setRoundParticipation(qualifiedRounds);
+          }
+        }
       }
 
       const { count } = await supabase
@@ -97,6 +119,41 @@ export default function CompetitionDetailPage() {
 
   const getRoundsForEvent = (eventId: string) =>
     rounds.filter(r => r.competition_event_id === eventId);
+
+  const getRoundAccess = (round: any): { clickable: boolean; badge: { label: string; variant: string } } => {
+    // Owner always has access
+    if (isOwner) {
+      return { clickable: true, badge: { label: round.status, variant: round.status === 'active' ? 'destructive' : round.status === 'completed' ? 'secondary' : 'outline' } };
+    }
+
+    // Not registered — can only see round 1 (to prompt registration)
+    if (!isRegistered) {
+      if (round.round_number === 1) {
+        return { clickable: true, badge: { label: 'Register to compete', variant: 'outline' } };
+      }
+      return { clickable: false, badge: { label: 'Locked', variant: 'secondary' } };
+    }
+
+    // Round is pending (not yet started)
+    if (round.status === 'pending') {
+      if (round.round_number === 1) {
+        return { clickable: false, badge: { label: 'Not started', variant: 'outline' } };
+      }
+      return { clickable: false, badge: { label: 'Locked', variant: 'secondary' } };
+    }
+
+    // Round 1: always accessible to registered competitors
+    if (round.round_number === 1) {
+      return { clickable: true, badge: { label: round.status === 'active' ? 'Open' : 'Completed', variant: round.status === 'active' ? 'destructive' : 'secondary' } };
+    }
+
+    // Round 2+: check qualification
+    if (roundParticipation.has(round.id)) {
+      return { clickable: true, badge: { label: 'Qualified ✓', variant: 'default' } };
+    }
+
+    return { clickable: false, badge: { label: 'Not qualified', variant: 'secondary' } };
+  };
 
   return (
     <div>
@@ -157,21 +214,41 @@ export default function CompetitionDetailPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
-                      {eventRounds.map(round => (
-                        <div
-                          key={round.id}
-                          className="flex items-center justify-between rounded border p-3"
-                        >
-                          <span>Round {round.round_number}</span>
-                          <Badge variant={
-                            round.status === 'completed' ? 'secondary' :
-                            round.status === 'active' ? 'destructive' :
-                            'outline'
-                          }>
-                            {round.status}
-                          </Badge>
-                        </div>
-                      ))}
+                      {eventRounds.map(round => {
+                        const access = getRoundAccess(round);
+                        return (
+                          <div
+                            key={round.id}
+                            className={`flex items-center justify-between rounded border p-3 ${
+                              access.clickable
+                                ? 'cursor-pointer hover:bg-muted/50 transition-colors'
+                                : 'opacity-60'
+                            }`}
+                            onClick={() => {
+                              if (access.clickable) {
+                                window.location.href =
+                                  `/competitions/${id}/events/${cEvent.event_key}/round/${round.round_number}`;
+                              }
+                            }}
+                          >
+                            <div className="flex items-center gap-3">
+                              <span className="font-medium">
+                                Round {round.round_number}
+                              </span>
+                              {!access.clickable && (
+                                <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                              )}
+                            </div>
+                            <Badge variant={
+                              access.badge.variant as any === 'destructive' ? 'destructive' :
+                              access.badge.variant as any === 'default' ? 'default' :
+                              'outline'
+                            }>
+                              {access.badge.label}
+                            </Badge>
+                          </div>
+                        );
+                      })}
                     </div>
                   </CardContent>
                 </Card>

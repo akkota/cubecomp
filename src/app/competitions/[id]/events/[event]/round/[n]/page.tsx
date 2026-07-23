@@ -7,15 +7,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { createClient } from '@/lib/supabase/client';
 import { getEventByKey, formatTime } from '@/lib/wca-events';
 import { RoundLeaderboard } from '@/components/competitions/leaderboard';
+import { submitTimesAction } from '@/actions/submitTimes';
 import { toast } from 'sonner';
-import { Clock, Send } from 'lucide-react';
+import { Clock, Lock, Send, AlertTriangle } from 'lucide-react';
 
 type ScrambleEntry = { id: string; scramble_number: number; scramble: string };
 type SolveEntry = { solve_number: number; time_ms: number | null; penalty: string };
+
+type AccessState = 'loading' | 'granted' | 'blocked_registration' | 'blocked_qualification' | 'blocked_round_locked';
 
 export default function RoundPage() {
   const params = useParams<{ id: string; event: string; n: string }>();
@@ -28,8 +30,8 @@ export default function RoundPage() {
   const [penalties, setPenalties] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [accessState, setAccessState] = useState<AccessState>('loading');
   const [user, setUser] = useState<any>(null);
-  const [isCompetitor, setIsCompetitor] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -37,7 +39,7 @@ export default function RoundPage() {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
 
-      // Get round from round number + event key + competition
+      // Get competition event
       const { data: cEvent } = await supabase
         .from('competition_events')
         .select('*')
@@ -48,6 +50,7 @@ export default function RoundPage() {
       if (!cEvent) { toast.error('Event not found'); return; }
       setCompEvent(cEvent);
 
+      // Get round
       const { data: r } = await supabase
         .from('rounds')
         .select('*')
@@ -58,6 +61,7 @@ export default function RoundPage() {
       if (!r) { toast.error('Round not found'); return; }
       setRound(r);
 
+      // Get competition
       const { data: comp } = await supabase
         .from('competitions')
         .select('*')
@@ -65,25 +69,41 @@ export default function RoundPage() {
         .single();
       setCompetition(comp);
 
-      // Fetch scrambles
-      const { data: sc } = await supabase
-        .from('scrambles')
-        .select('*')
-        .eq('round_id', r.id)
-        .order('scramble_number');
-      setScrambles(sc ?? []);
-
-      // Check if user is registered
-      if (user) {
+      // Determine access state
+      if (!user) {
+        setAccessState('blocked_registration');
+      } else {
+        // Check if user is registered as competitor
         const { data: competitor } = await supabase
           .from('competitors')
           .select('id')
           .eq('competition_id', params.id)
           .eq('user_id', user.id)
           .maybeSingle();
-        setIsCompetitor(!!competitor);
 
-        // Fetch existing solves for this user
+        if (!competitor) {
+          setAccessState('blocked_registration');
+        } else if (r.status === 'pending') {
+          setAccessState('blocked_round_locked');
+        } else if (parseInt(params.n) > 1) {
+          // Round 2+: check qualification
+          const { data: participant } = await supabase
+            .from('round_participants')
+            .select('id')
+            .eq('round_id', r.id)
+            .eq('competitor_id', competitor.id)
+            .maybeSingle();
+
+          if (!participant) {
+            setAccessState('blocked_qualification');
+          } else {
+            setAccessState('granted');
+          }
+        } else {
+          setAccessState('granted');
+        }
+
+        // Fetch existing solves if competitor exists
         if (competitor) {
           const { data: sol } = await supabase
             .from('solves')
@@ -110,6 +130,14 @@ export default function RoundPage() {
         }
       }
 
+      // Try fetching scrambles (RLS will filter if not eligible)
+      const { data: sc } = await supabase
+        .from('scrambles')
+        .select('*')
+        .eq('round_id', r.id)
+        .order('scramble_number');
+      setScrambles(sc ?? []);
+
       setLoading(false);
     };
     fetch();
@@ -119,47 +147,18 @@ export default function RoundPage() {
   const solveCount = wcaEvent?.solveCount ?? 5;
 
   const handleSubmit = async () => {
-    if (!user || !isCompetitor) {
-      toast.error('You need to register for this competition first');
-      return;
-    }
-
-    const { data: competitor } = await supabase
-      .from('competitors')
-      .select('id')
-      .eq('competition_id', params.id)
-      .eq('user_id', user.id)
-      .single();
-
-    if (!competitor) { toast.error('Not registered'); return; }
-
-    setSubmitting(true);
-
-    // Delete existing solves for this user/round
-    await supabase
-      .from('solves')
-      .delete()
-      .eq('round_id', round.id)
-      .eq('competitor_id', competitor.id);
-
-    const solvesToInsert = [];
+    const solvesToSubmit = [];
     for (let i = 1; i <= solveCount; i++) {
       const raw = times[i]?.trim();
       const penalty = penalties[i] || 'none';
 
-      if (!raw) {
-        // No time entered — skip this solve
-        continue;
-      }
+      if (!raw) continue; // Skip empty solves
 
       if (raw.toUpperCase() === 'DNF') {
-        solvesToInsert.push({
-          round_id: round.id,
-          competitor_id: competitor.id,
+        solvesToSubmit.push({
           solve_number: i,
           time_ms: null,
           penalty: 'DNF',
-          submitted_by: user.id,
         });
         continue;
       }
@@ -167,34 +166,118 @@ export default function RoundPage() {
       const seconds = parseFloat(raw);
       if (isNaN(seconds) || seconds < 0) {
         toast.error(`Invalid time for solve ${i}`);
-        setSubmitting(false);
         return;
       }
 
-      solvesToInsert.push({
-        round_id: round.id,
-        competitor_id: competitor.id,
+      solvesToSubmit.push({
         solve_number: i,
         time_ms: Math.round(seconds * 1000),
         penalty,
-        submitted_by: user.id,
       });
     }
 
-    if (solvesToInsert.length === 0) {
+    if (solvesToSubmit.length === 0) {
       toast.error('Enter at least one time');
-      setSubmitting(false);
       return;
     }
 
-    const { error } = await supabase.from('solves').insert(solvesToInsert);
-    if (error) {
-      toast.error(error.message);
-    } else {
+    setSubmitting(true);
+
+    try {
+      await submitTimesAction(round.id, params.id, solvesToSubmit);
       toast.success('Times submitted!');
+
+      // Refresh solves display
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: competitor } = await supabase
+        .from('competitors')
+        .select('id')
+        .eq('competition_id', params.id)
+        .eq('user_id', user!.id)
+        .single();
+
+      if (competitor) {
+        const { data: sol } = await supabase
+          .from('solves')
+          .select('*')
+          .eq('round_id', round.id)
+          .eq('competitor_id', competitor.id)
+          .order('solve_number');
+        if (sol) {
+          const solveEntries = sol.map(s => ({
+            solve_number: s.solve_number,
+            time_ms: s.time_ms,
+            penalty: s.penalty,
+          }));
+          setExistingSolves(solveEntries);
+          const timeMap: Record<number, string> = {};
+          const penaltyMap: Record<number, string> = {};
+          for (const s of solveEntries) {
+            if (s.time_ms !== null) timeMap[s.solve_number] = (s.time_ms / 1000).toFixed(2);
+            penaltyMap[s.solve_number] = s.penalty === 'none' ? '' : s.penalty;
+          }
+          setTimes(timeMap);
+          setPenalties(penaltyMap);
+        }
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to submit times');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // --- Blocked states ---
+  const renderBlockedMessage = () => {
+    if (accessState === 'blocked_registration') {
+      return (
+        <Card className="mb-6 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+          <CardContent className="flex items-center gap-3 py-6">
+            <AlertTriangle className="h-5 w-5 text-amber-600" />
+            <div>
+              <p className="font-medium">Not registered</p>
+              <p className="text-sm text-muted-foreground">
+                You need to register for this competition before you can view scrambles or submit times.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      );
     }
 
-    setSubmitting(false);
+    if (accessState === 'blocked_qualification') {
+      return (
+        <Card className="mb-6 border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950">
+          <CardContent className="flex items-center gap-3 py-6">
+            <Lock className="h-5 w-5 text-red-600" />
+            <div>
+              <p className="font-medium">Not qualified</p>
+              <p className="text-sm text-muted-foreground">
+                You did not place high enough in the previous round to qualify for this round.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (accessState === 'blocked_round_locked') {
+      return (
+        <Card className="mb-6 border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+          <CardContent className="flex items-center gap-3 py-6">
+            <Clock className="h-5 w-5 text-blue-600" />
+            <div>
+              <p className="font-medium">Round not yet open</p>
+              <p className="text-sm text-muted-foreground">
+                This round hasn&apos;t started yet. Check back once the previous round is finalized and advancement is calculated.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    return null;
   };
 
   if (loading) return <p className="text-muted-foreground">Loading round...</p>;
@@ -218,8 +301,11 @@ export default function RoundPage() {
         </p>
       </div>
 
-      {/* Scrambles */}
-      {scrambles.length > 0 && (
+      {/* Access blocked message */}
+      {renderBlockedMessage()}
+
+      {/* Scrambles — only show if granted access AND scrambles exist */}
+      {accessState === 'granted' && scrambles.length > 0 && (
         <Card className="mb-6">
           <CardHeader>
             <CardTitle className="text-base">Scrambles</CardTitle>
@@ -237,8 +323,8 @@ export default function RoundPage() {
         </Card>
       )}
 
-      {/* Time Entry */}
-      {round?.status === 'active' && isCompetitor && (
+      {/* Time Entry — only for active rounds with access granted */}
+      {accessState === 'granted' && round?.status === 'active' && (
         <Card className="mb-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">

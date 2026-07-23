@@ -26,6 +26,7 @@ export function SignupForm() {
       password,
       options: {
         data: { username },
+        emailRedirectTo: `${window.location.origin}/callback`,
       },
     });
 
@@ -35,9 +36,8 @@ export function SignupForm() {
       return;
     }
 
-    toast.success('Account created! Check your email for confirmation.');
-    router.push('/dashboard');
-    router.refresh();
+    toast.success('Account created! Check your email for the verification link.');
+    setLoading(false);
   };
 
   return (

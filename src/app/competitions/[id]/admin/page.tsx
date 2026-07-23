@@ -10,8 +10,9 @@ import { Separator } from '@/components/ui/separator';
 import { createClient } from '@/lib/supabase/client';
 import { WCA_EVENTS } from '@/lib/wca-events';
 import { generateScramblesAction } from '@/actions/generateScrambles';
+import { calculateAdvancementAction } from '@/actions/calculateAdvancement';
 import { toast } from 'sonner';
-import { ArrowUp, Play, Square, ShuffleIcon, Users } from 'lucide-react';
+import { ArrowUp, Play, Square, ShuffleIcon, Users, Trophy, CheckCircle2 } from 'lucide-react';
 
 export default function CompetitionAdminPage() {
   const { id } = useParams<{ id: string }>();
@@ -20,8 +21,10 @@ export default function CompetitionAdminPage() {
   const [allRounds, setAllRounds] = useState<any[]>([]);
   const [scrambles, setScrambles] = useState<Record<string, any[]>>({});
   const [isOwner, setIsOwner] = useState(false);
+  const [isRegistered, setIsRegistered] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState<Record<string, boolean>>({});
+  const [calculating, setCalculating] = useState<Record<string, boolean>>({});
   const router = useRouter();
   const supabase = createClient();
 
@@ -43,6 +46,15 @@ export default function CompetitionAdminPage() {
       }
       setCompetition(comp);
       setIsOwner(true);
+
+      // Check if admin is also registered as a competitor
+      const { data: existingReg } = await supabase
+        .from('competitors')
+        .select('id')
+        .eq('competition_id', id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      setIsRegistered(!!existingReg);
 
       const { data: compEvents } = await supabase
         .from('competition_events')
@@ -90,14 +102,12 @@ export default function CompetitionAdminPage() {
   const handleGenerateScrambles = async (round: any, eventKey: string, solveCount: number) => {
     setGenerating(prev => ({ ...prev, [round.id]: true }));
     try {
-      // Race against a timeout so the UI doesn't hang forever on Vercel's 10s limit
       await Promise.race([
         generateScramblesAction(round.id, eventKey, solveCount),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Scramble generation timed out. Vercel serverless functions have a 10s limit — try again or upgrade to Pro.')), 25000)
         ),
       ]);
-      // Refetch scrambles from DB
       const { data: freshScrambles } = await supabase
         .from('scrambles')
         .select('*')
@@ -151,6 +161,37 @@ export default function CompetitionAdminPage() {
     );
   };
 
+  const handleCalculateAdvancement = async (round: any) => {
+    setCalculating(prev => ({ ...prev, [round.id]: true }));
+    try {
+      const result = await calculateAdvancementAction(round.id);
+      toast.success(
+        `${result.advanced} of ${result.total} advanced to Round ${result.nextRoundNumber}`
+      );
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setCalculating(prev => ({ ...prev, [round.id]: false }));
+    }
+  };
+
+  const handleRegisterAsCompetitor = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { error } = await supabase.from('competitors').insert({
+      competition_id: id,
+      user_id: user.id,
+    });
+
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success('Registered as competitor!');
+      setIsRegistered(true);
+    }
+  };
+
   if (loading) return <p className="text-muted-foreground">Loading admin panel...</p>;
   if (!competition) return <p>Competition not found.</p>;
 
@@ -161,7 +202,18 @@ export default function CompetitionAdminPage() {
           <h1 className="text-3xl font-bold">Admin: {competition.name}</h1>
           <p className="text-muted-foreground">Manage rounds, scrambles, and cutoffs</p>
         </div>
-        <Badge variant="outline">{competition.status}</Badge>
+        <div className="flex items-center gap-3">
+          <Badge variant="outline">{competition.status}</Badge>
+          {isRegistered ? (
+            <Badge variant="secondary">
+              <CheckCircle2 className="mr-1 h-3 w-3" /> Competing
+            </Badge>
+          ) : (
+            <Button variant="outline" size="sm" onClick={handleRegisterAsCompetitor}>
+              <Trophy className="mr-1 h-3 w-3" /> Compete as competitor
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-6">
@@ -185,6 +237,7 @@ export default function CompetitionAdminPage() {
                 {eventRounds.map(round => {
                   const roundScrambles = scrambles[round.id] || [];
                   const hasScrambles = roundScrambles.length > 0;
+                  const hasNextRound = round.round_number < cEvent.round_count;
 
                   return (
                     <div key={round.id} className="rounded-lg border p-4">
@@ -231,25 +284,38 @@ export default function CompetitionAdminPage() {
                               <Square className="mr-1 h-3 w-3" /> End Round
                             </Button>
                           )}
+                          {round.status === 'completed' && hasNextRound && (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              disabled={calculating[round.id]}
+                              onClick={() => handleCalculateAdvancement(round)}
+                            >
+                              <ArrowUp className="mr-1 h-3 w-3" />
+                              {calculating[round.id] ? 'Calculating...' : 'Calculate Advancement'}
+                            </Button>
+                          )}
                         </div>
                       </div>
 
                       {/* Advance cutoff */}
-                      <div className="mb-3 flex items-center gap-3">
-                        <Users className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">Advance top:</span>
-                        <Input
-                          type="number"
-                          className="w-20 h-8"
-                          placeholder="Auto"
-                          min={1}
-                          value={round.advance_count ?? ''}
-                          onChange={e => handleSetAdvanceCount(round.id, parseInt(e.target.value || '0'))}
-                        />
-                        <span className="text-xs text-muted-foreground">
-                          to next round
-                        </span>
-                      </div>
+                      {round.round_number < cEvent.round_count && (
+                        <div className="mb-3 flex items-center gap-3">
+                          <Users className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">Advance top:</span>
+                          <Input
+                            type="number"
+                            className="w-20 h-8"
+                            placeholder="Auto"
+                            min={1}
+                            value={round.advance_count ?? ''}
+                            onChange={e => handleSetAdvanceCount(round.id, parseInt(e.target.value || '0'))}
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            to round {round.round_number + 1}
+                          </span>
+                        </div>
+                      )}
 
                       {/* Scrambles display */}
                       {hasScrambles && (

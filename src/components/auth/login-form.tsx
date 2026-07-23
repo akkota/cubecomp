@@ -24,17 +24,21 @@ export function LoginForm({ redirectTo = '/dashboard' }: LoginFormProps) {
     e.preventDefault();
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) {
-      toast.error(error.message);
+    if (error || !data.session) {
+      toast.error(error?.message || 'Sign in failed. Please try again.');
       setLoading(false);
       return;
     }
 
     toast.success('Welcome back!');
-    router.push(redirectTo);
-    router.refresh();
+    // Use a full page navigation instead of client-side router.push.
+    // This avoids a race condition: client-side navigation can fire before
+    // Supabase session cookies are fully flushed, causing the middleware to
+    // see no user and redirect back to /login (button stuck on "Signing in…").
+    // A full page load ensures the browser sends all current cookies.
+    window.location.href = redirectTo;
   };
 
   return (
