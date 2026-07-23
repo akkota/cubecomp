@@ -165,11 +165,22 @@ export default function CompetitionAdminPage() {
     setCalculating(prev => ({ ...prev, [round.id]: true }));
     try {
       const result = await calculateAdvancementAction(round.id);
-      toast.success(
-        `${result.advanced} of ${result.total} advanced to Round ${result.nextRoundNumber}`
-      );
+      if (!result.success) {
+        toast.error(result.error);
+      } else if (result.alreadyCalculated) {
+        toast.success(`Already calculated — ${result.advanced} already advanced to Round ${result.nextRoundNumber}`);
+      } else if (result.advanced === 0) {
+        toast.warning(
+          `No one advanced to Round ${result.nextRoundNumber}. ` +
+          `${result.total} competitors submitted times${result.dnfCount ? ` (${result.dnfCount} DNF'd)` : ''}`
+        );
+      } else {
+        toast.success(
+          `${result.advanced} of ${result.total} advanced to Round ${result.nextRoundNumber}`
+        );
+      }
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || 'Something went wrong');
     } finally {
       setCalculating(prev => ({ ...prev, [round.id]: false }));
     }

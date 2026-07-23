@@ -220,6 +220,17 @@ export async function generateAndStoreScrambles(
   solveCount: number,
   supabase: any,
 ): Promise<string[]> {
+  // Idempotency guard — don't re-generate if scrambles already exist
+  const { data: existing } = await supabase
+    .from('scrambles')
+    .select('scramble')
+    .eq('round_id', roundId)
+    .order('scramble_number');
+
+  if (existing && existing.length > 0) {
+    return existing.map((s: any) => s.scramble);
+  }
+
   const scrambles = await generateScrambles(eventKey, solveCount);
 
   const { error } = await supabase
@@ -232,6 +243,17 @@ export async function generateAndStoreScrambles(
       })),
     );
 
-  if (error) throw new Error(`Failed to store scrambles: ${error.message}`);
+  // Handle race condition — if another insert beat us, just return fresh data
+  if (error) {
+    if (error.code === '23505') {
+      const { data: raced } = await supabase
+        .from('scrambles')
+        .select('scramble')
+        .eq('round_id', roundId)
+        .order('scramble_number');
+      if (raced) return raced.map((s: any) => s.scramble);
+    }
+    throw new Error(`Failed to store scrambles: ${error.message}`);
+  }
   return scrambles;
 }

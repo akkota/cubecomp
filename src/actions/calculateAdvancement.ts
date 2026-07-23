@@ -4,12 +4,29 @@ import { createClient } from '@/lib/supabase/server';
 import { calculateResult } from '@/lib/wca-events';
 import { getEventByKey } from '@/lib/wca-events';
 
-export async function calculateAdvancementAction(roundId: string) {
+export type AdvancementResult = {
+  success: boolean;
+  error?: string;
+  /** Number of competitors who advanced */
+  advanced?: number;
+  /** Total competitors who submitted times */
+  total?: number;
+  /** Total registered competitors */
+  registered?: number;
+  /** Number who DNF'd all solves */
+  dnfCount?: number;
+  roundNumber?: number;
+  nextRoundNumber?: number;
+  /** True if advancement was already calculated before this call */
+  alreadyCalculated?: boolean;
+};
+
+export async function calculateAdvancementAction(roundId: string): Promise<AdvancementResult> {
   const supabase = await createClient();
 
-  // 1. Verify user is the competition creator
+  // 1. Auth + ownership
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  if (!user) return { success: false, error: 'Not authenticated' };
 
   const { data: round } = await supabase
     .from('rounds')
@@ -17,8 +34,7 @@ export async function calculateAdvancementAction(roundId: string) {
     .eq('id', roundId)
     .single();
 
-  if (!round) throw new Error('Round not found');
-  if (!round.advance_count) throw new Error('Advance count not set for this round');
+  if (!round) return { success: false, error: 'Round not found' };
 
   const { data: comp } = await supabase
     .from('competitions')
@@ -27,12 +43,16 @@ export async function calculateAdvancementAction(roundId: string) {
     .single();
 
   if (!comp || comp.created_by !== user.id) {
-    throw new Error('Only the competition creator can calculate advancement');
+    return { success: false, error: 'Only the competition creator can calculate advancement' };
   }
 
-  // 2. Verify round is completed
+  // 2. Validate state
   if (round.status !== 'completed') {
-    throw new Error('Previous round must be completed before calculating advancement');
+    return { success: false, error: 'The round must be completed before calculating advancement' };
+  }
+
+  if (!round.advance_count || round.advance_count < 1) {
+    return { success: false, error: 'Set an advance count (e.g. top 3) before calculating advancement' };
   }
 
   // 3. Get the next round
@@ -44,24 +64,57 @@ export async function calculateAdvancementAction(roundId: string) {
     .single();
 
   if (!nextRound) {
-    throw new Error('No next round to advance to');
+    return { success: false, error: 'No next round exists to advance competitors to' };
   }
 
-  // 4. Fetch all solves for this round
+  // 4. Idempotency guard — if round_participants already exist for the next round,
+  //    advancement was already calculated. Return the existing state.
+  const { count: existingCount } = await supabase
+    .from('round_participants')
+    .select('*', { count: 'exact', head: true })
+    .eq('round_id', nextRound.id);
+
+  if (existingCount && existingCount > 0) {
+    return {
+      success: true,
+      advanced: existingCount,
+      total: existingCount,
+      roundNumber: round.round_number,
+      nextRoundNumber: nextRound.round_number,
+      alreadyCalculated: true,
+    };
+  }
+
+  // 5. Count registered competitors for context
+  const { count: registeredCount } = await supabase
+    .from('competitors')
+    .select('*', { count: 'exact', head: true })
+    .eq('competition_id', round.competition_event.competition_id);
+
+  // 6. Fetch all solves for this round
   const { data: solves } = await supabase
     .from('solves')
     .select('*, competitor:competitor_id!inner(*)')
     .eq('round_id', roundId);
 
-  if (!solves || solves.length === 0) {
-    throw new Error('No solves submitted for this round');
+  const hasSolves = solves && solves.length > 0;
+
+  // Edge case: no solves at all
+  if (!hasSolves) {
+    return {
+      success: true,
+      advanced: 0,
+      total: 0,
+      registered: registeredCount ?? 0,
+      roundNumber: round.round_number,
+      nextRoundNumber: nextRound.round_number,
+    };
   }
 
-  // 5. Group solves by competitor and calculate results
+  // 7. Group solves by competitor and calculate results
   const eventKey = round.competition_event.event_key;
   const wcaEvent = getEventByKey(eventKey);
   const format = round.competition_event.event_format as 'average' | 'mean';
-  const solveCount = wcaEvent?.solveCount ?? 5;
 
   const competitorResults = new Map<string, { competitor_id: string; times: (number | null)[] }>();
 
@@ -77,42 +130,71 @@ export async function calculateAdvancementAction(roundId: string) {
     competitorResults.get(cId)!.times.push(time);
   }
 
-  // 6. Sort by result (best first)
+  // 8. Sort by result (best first), separate DNF vs valid
   const sorted = Array.from(competitorResults.values()).sort((a, b) => {
     const resA = calculateResult(a.times, format);
     const resB = calculateResult(b.times, format);
+    // Valid results before DNF; DNF sorted together; empty after DNF
+    if (resA === null && resB === null) return 0;
+    if (resA === null) return 1;
+    if (resB === null) return -1;
     if (resA === 'DNF' && resB === 'DNF') return 0;
     if (resA === 'DNF') return 1;
     if (resB === 'DNF') return -1;
-    if (resA === null) return 1;
-    if (resB === null) return -1;
     return (resA as number) - (resB as number);
   });
 
-  // 7. Apply advance_count cutoff with tie handling
+  // 9. Count competitors with valid results vs DNF
+  let dnfCount = 0;
+  let validCount = 0;
+  for (const c of sorted) {
+    const res = calculateResult(c.times, format);
+    if (res === 'DNF') dnfCount++;
+    else if (res !== null) validCount++;
+  }
+
+  // 10. Apply advance_count cutoff with tie handling
   const advanceCount = round.advance_count;
   const advancing: string[] = [];
 
-  // Take first N competitors
-  for (let i = 0; i < Math.min(advanceCount, sorted.length); i++) {
-    advancing.push(sorted[i].competitor_id);
+  // Only advance competitors with valid results
+  const validCompetitors = sorted.filter(c => {
+    const res = calculateResult(c.times, format);
+    return res !== null && res !== 'DNF';
+  });
+
+  // Edge case: zero valid results (everyone DNF'd)
+  if (validCompetitors.length === 0) {
+    return {
+      success: true,
+      advanced: 0,
+      total: sorted.length,
+      registered: registeredCount ?? 0,
+      dnfCount,
+      roundNumber: round.round_number,
+      nextRoundNumber: nextRound.round_number,
+    };
+  }
+
+  // Take first N valid competitors (or all if fewer than the cutoff)
+  for (let i = 0; i < Math.min(advanceCount, validCompetitors.length); i++) {
+    advancing.push(validCompetitors[i].competitor_id);
   }
 
   // Handle ties at the cutoff boundary
-  if (advanceCount <= sorted.length) {
-    const cutoffResult = calculateResult(sorted[advanceCount - 1].times, format);
-    // Walk forward: anyone tied with the cutoff person also advances
-    for (let i = advanceCount; i < sorted.length; i++) {
-      const res = calculateResult(sorted[i].times, format);
+  if (advanceCount <= validCompetitors.length) {
+    const cutoffResult = calculateResult(validCompetitors[advanceCount - 1].times, format);
+    for (let i = advanceCount; i < validCompetitors.length; i++) {
+      const res = calculateResult(validCompetitors[i].times, format);
       if (res === cutoffResult) {
-        advancing.push(sorted[i].competitor_id);
+        advancing.push(validCompetitors[i].competitor_id);
       } else {
-        break; // sorted, so no more ties after this
+        break;
       }
     }
   }
 
-  // 8. Insert into round_participants for the next round
+  // 11. Insert into round_participants for the next round
   const inserts = advancing.map(competitor_id => ({
     round_id: nextRound.id,
     competitor_id,
@@ -122,11 +204,29 @@ export async function calculateAdvancementAction(roundId: string) {
     .from('round_participants')
     .insert(inserts);
 
-  if (error) throw new Error(`Failed to advance competitors: ${error.message}`);
+  if (error) {
+    // Handle unique constraint violation (re-insert race)
+    if (error.code === '23505') {
+      return {
+        success: true,
+        advanced: advancing.length,
+        total: sorted.length,
+        registered: registeredCount ?? 0,
+        dnfCount,
+        roundNumber: round.round_number,
+        nextRoundNumber: nextRound.round_number,
+        alreadyCalculated: true,
+      };
+    }
+    return { success: false, error: `Failed to advance competitors: ${error.message}` };
+  }
 
   return {
+    success: true,
     advanced: advancing.length,
     total: sorted.length,
+    registered: registeredCount ?? 0,
+    dnfCount,
     roundNumber: round.round_number,
     nextRoundNumber: nextRound.round_number,
   };
