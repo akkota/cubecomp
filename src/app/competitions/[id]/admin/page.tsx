@@ -229,7 +229,7 @@ export default function CompetitionAdminPage() {
                       {competition.generate_scrambles !== false && (
                         <Button variant="outline" size="sm" disabled={generating[r.id]||hs} onClick={()=>hgs(r,ce.event_key,rSolveCount)} className="gap-1.5"><ShuffleIcon className="h-3.5 w-3.5"/>{generating[r.id]?'Generating…':hs?'Has Scrambles':'Generate Scrambles'}</Button>
                       )}
-                      {hs&&<Button variant="default" size="sm" disabled={!!startingRound} onClick={()=>hsr(r.id)} className="gap-1.5"><Play className="h-3.5 w-3.5"/>{startingRound===r.id?'Starting…':'Start'}</Button>}
+                      {(hs||competition.generate_scrambles===false)&&<Button variant="default" size="sm" disabled={!!startingRound} onClick={()=>hsr(r.id)} className="gap-1.5"><Play className="h-3.5 w-3.5"/>{startingRound===r.id?'Starting…':'Start'}</Button>}
                     </>}
                     {r.status==='active'&&<Button variant="destructive" size="sm" disabled={!!endingRound} onClick={()=>her(r.id)} className="gap-1.5"><Square className="h-3.5 w-3.5"/>{endingRound===r.id?'Ending…':'End Round'}</Button>}
                     {r.status==='completed'&&hnr&&<Button variant="default" size="sm" disabled={calculating[r.id]} onClick={()=>hca(r)} className="gap-1.5"><ArrowUp className="h-3.5 w-3.5"/>{calculating[r.id]?'Calculating…':'Calculate Advancement'}</Button>}
