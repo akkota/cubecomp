@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,6 +25,12 @@ export default function CompetitionAdminPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState<Record<string, boolean>>({});
   const [calculating, setCalculating] = useState<Record<string, boolean>>({});
+  const [startingRound, setStartingRound] = useState<string | null>(null);
+  const [endingRound, setEndingRound] = useState<string | null>(null);
+  const [registering, setRegistering] = useState(false);
+  const startingRef = useRef<string | null>(null);
+  const endingRef = useRef<string | null>(null);
+  const registeringRef = useRef(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -99,7 +105,12 @@ export default function CompetitionAdminPage() {
 
   const wcaEvent = (key: string) => WCA_EVENTS.find(e => e.key === key);
 
+  const generatingRef = useRef<Set<string>>(new Set());
+
   const handleGenerateScrambles = async (round: any, eventKey: string, solveCount: number) => {
+    // Guard against double-clicks before React re-renders
+    if (generatingRef.current.has(round.id)) return;
+    generatingRef.current.add(round.id);
     setGenerating(prev => ({ ...prev, [round.id]: true }));
     try {
       await Promise.race([
@@ -119,33 +130,52 @@ export default function CompetitionAdminPage() {
       toast.error(err.message);
     } finally {
       setGenerating(prev => ({ ...prev, [round.id]: false }));
+      generatingRef.current.delete(round.id);
     }
   };
 
   const handleStartRound = async (roundId: string) => {
+    // Guard against double-clicks
+    if (startingRef.current) return;
+    startingRef.current = roundId;
+    setStartingRound(roundId);
+
     const { error } = await supabase
       .from('rounds')
       .update({ status: 'active', started_at: new Date().toISOString() })
       .eq('id', roundId);
 
-    if (error) { toast.error(error.message); return; }
-    toast.success('Round started!');
-    setAllRounds(prev =>
-      prev.map(r => r.id === roundId ? { ...r, status: 'active', started_at: new Date().toISOString() } : r)
-    );
+    if (error) { toast.error(error.message); } else {
+      toast.success('Round started!');
+      setAllRounds(prev =>
+        prev.map(r => r.id === roundId ? { ...r, status: 'active', started_at: new Date().toISOString() } : r)
+      );
+    }
+
+    setStartingRound(null);
+    startingRef.current = null;
   };
 
   const handleEndRound = async (roundId: string) => {
+    // Guard against double-clicks
+    if (endingRef.current) return;
+    endingRef.current = roundId;
+    setEndingRound(roundId);
+
     const { error } = await supabase
       .from('rounds')
       .update({ status: 'completed', ended_at: new Date().toISOString() })
       .eq('id', roundId);
 
-    if (error) { toast.error(error.message); return; }
-    toast.success('Round ended!');
-    setAllRounds(prev =>
-      prev.map(r => r.id === roundId ? { ...r, status: 'completed', ended_at: new Date().toISOString() } : r)
-    );
+    if (error) { toast.error(error.message); } else {
+      toast.success('Round ended!');
+      setAllRounds(prev =>
+        prev.map(r => r.id === roundId ? { ...r, status: 'completed', ended_at: new Date().toISOString() } : r)
+      );
+    }
+
+    setEndingRound(null);
+    endingRef.current = null;
   };
 
   const handleSetAdvanceCount = async (roundId: string, count: number) => {
@@ -187,8 +217,12 @@ export default function CompetitionAdminPage() {
   };
 
   const handleRegisterAsCompetitor = async () => {
+    if (registeringRef.current) return;
+    registeringRef.current = true;
+    setRegistering(true);
+
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) { toast.error('Login required'); registeringRef.current = false; setRegistering(false); return; }
 
     const { error } = await supabase.from('competitors').insert({
       competition_id: id,
@@ -196,11 +230,18 @@ export default function CompetitionAdminPage() {
     });
 
     if (error) {
-      toast.error(error.message);
+      if (error.code === '23505') {
+        toast.success('Already registered!');
+      } else {
+        toast.error(error.message);
+      }
     } else {
       toast.success('Registered as competitor!');
       setIsRegistered(true);
     }
+
+    setRegistering(false);
+    registeringRef.current = false;
   };
 
   if (loading) return <p className="text-muted-foreground">Loading admin panel...</p>;
@@ -220,8 +261,8 @@ export default function CompetitionAdminPage() {
               <CheckCircle2 className="mr-1 h-3 w-3" /> Competing
             </Badge>
           ) : (
-            <Button variant="outline" size="sm" onClick={handleRegisterAsCompetitor}>
-              <Trophy className="mr-1 h-3 w-3" /> Compete as competitor
+            <Button variant="outline" size="sm" onClick={handleRegisterAsCompetitor} disabled={registering}>
+              <Trophy className="mr-1 h-3 w-3" /> {registering ? 'Registering...' : 'Compete as competitor'}
             </Button>
           )}
         </div>
@@ -279,9 +320,10 @@ export default function CompetitionAdminPage() {
                                 <Button
                                   variant="default"
                                   size="sm"
+                                  disabled={startingRound === round.id}
                                   onClick={() => handleStartRound(round.id)}
                                 >
-                                  <Play className="mr-1 h-3 w-3" /> Start
+                                  <Play className="mr-1 h-3 w-3" /> {startingRound === round.id ? 'Starting...' : 'Start'}
                                 </Button>
                               )}
                             </>
@@ -290,9 +332,10 @@ export default function CompetitionAdminPage() {
                             <Button
                               variant="destructive"
                               size="sm"
+                              disabled={endingRound === round.id}
                               onClick={() => handleEndRound(round.id)}
                             >
-                              <Square className="mr-1 h-3 w-3" /> End Round
+                              <Square className="mr-1 h-3 w-3" /> {endingRound === round.id ? 'Ending...' : 'End Round'}
                             </Button>
                           )}
                           {round.status === 'completed' && hasNextRound && (

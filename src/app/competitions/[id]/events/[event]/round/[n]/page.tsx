@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,6 +30,7 @@ export default function RoundPage() {
   const [penalties, setPenalties] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [accessState, setAccessState] = useState<AccessState>('loading');
   const [user, setUser] = useState<any>(null);
   const supabase = createClient();
@@ -147,6 +148,11 @@ export default function RoundPage() {
   const solveCount = wcaEvent?.solveCount ?? 5;
 
   const handleSubmit = async () => {
+    // Guard against double-clicks before React re-renders
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+
     const solvesToSubmit = [];
     for (let i = 1; i <= solveCount; i++) {
       const raw = times[i]?.trim();
@@ -184,7 +190,11 @@ export default function RoundPage() {
     setSubmitting(true);
 
     try {
-      await submitTimesAction(round.id, params.id, solvesToSubmit);
+      const result = await submitTimesAction(round.id, params.id, solvesToSubmit);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
       toast.success('Times submitted!');
 
       // Refresh solves display
@@ -224,6 +234,7 @@ export default function RoundPage() {
       toast.error(err.message || 'Failed to submit times');
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   };
 

@@ -13,12 +13,12 @@ export async function submitTimesAction(
   roundId: string,
   competitionId: string,
   solves: SolveInput[],
-) {
+): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient();
 
   // 1. Get current user
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  if (!user) return { success: false, error: 'Not authenticated' };
 
   // 2. Verify the round exists and is active
   const { data: round } = await supabase
@@ -27,8 +27,8 @@ export async function submitTimesAction(
     .eq('id', roundId)
     .single();
 
-  if (!round) throw new Error('Round not found');
-  if (round.status !== 'active') throw new Error('Round is not active');
+  if (!round) return { success: false, error: 'Round not found' };
+  if (round.status !== 'active') return { success: false, error: 'Round is not active' };
 
   // 3. Verify user is a registered competitor for this competition
   const { data: competitor } = await supabase
@@ -38,7 +38,7 @@ export async function submitTimesAction(
     .eq('user_id', user.id)
     .single();
 
-  if (!competitor) throw new Error('You are not registered for this competition');
+  if (!competitor) return { success: false, error: 'You are not registered for this competition' };
 
   // 4. Server-side eligibility check
   //    - Round 1: any registered competitor is eligible
@@ -52,7 +52,7 @@ export async function submitTimesAction(
       .maybeSingle();
 
     if (!participant) {
-      throw new Error('You have not qualified for this round');
+      return { success: false, error: 'You have not qualified for this round' };
     }
   }
 
@@ -61,28 +61,23 @@ export async function submitTimesAction(
   const wcaEvent = getEventByKey(eventKey);
   const solveCount = wcaEvent?.solveCount ?? 5;
 
-  if (solves.length === 0) throw new Error('Enter at least one time');
+  if (solves.length === 0) return { success: false, error: 'Enter at least one time' };
 
   for (const solve of solves) {
     if (solve.solve_number < 1 || solve.solve_number > solveCount) {
-      throw new Error(`Invalid solve number: ${solve.solve_number}`);
+      return { success: false, error: `Invalid solve number: ${solve.solve_number}` };
     }
     if (!['none', 'DNF', '+2', 'DNS'].includes(solve.penalty)) {
-      throw new Error(`Invalid penalty: ${solve.penalty}`);
+      return { success: false, error: `Invalid penalty: ${solve.penalty}` };
     }
     if (solve.penalty === 'none' && solve.time_ms !== null && solve.time_ms < 0) {
-      throw new Error(`Invalid time for solve ${solve.solve_number}`);
+      return { success: false, error: `Invalid time for solve ${solve.solve_number}` };
     }
   }
 
-  // 6. Delete existing solves for this user/round
-  await supabase
-    .from('solves')
-    .delete()
-    .eq('round_id', roundId)
-    .eq('competitor_id', competitor.id);
-
-  // 7. Insert new solves
+  // 6. Use upsert instead of delete+insert for idempotency.
+  //    If the same (round_id, competitor_id, solve_number) exists, update it.
+  //    This prevents errors from the unique constraint when called concurrently.
   const inserts = solves.map(solve => ({
     round_id: roundId,
     competitor_id: competitor.id,
@@ -92,8 +87,14 @@ export async function submitTimesAction(
     submitted_by: user.id,
   }));
 
-  const { error } = await supabase.from('solves').insert(inserts);
-  if (error) throw new Error(`Failed to submit times: ${error.message}`);
+  const { error } = await supabase
+    .from('solves')
+    .upsert(inserts, {
+      onConflict: 'round_id,competitor_id,solve_number',
+      ignoreDuplicates: false,
+    });
+
+  if (error) return { success: false, error: `Failed to submit times: ${error.message}` };
 
   return { success: true };
 }

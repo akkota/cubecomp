@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,6 +21,8 @@ export default function CompetitionDetailPage() {
   const [isRegistered, setIsRegistered] = useState(false);
   const [competitorCount, setCompetitorCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [registering, setRegistering] = useState(false);
+  const registeringRef = useRef(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -97,8 +99,12 @@ export default function CompetitionDetailPage() {
   }, [id]);
 
   const handleRegister = async () => {
+    if (registeringRef.current) return;
+    registeringRef.current = true;
+    setRegistering(true);
+
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { toast.error('Login required'); return; }
+    if (!user) { toast.error('Login required'); registeringRef.current = false; setRegistering(false); return; }
 
     const { error } = await supabase.from('competitors').insert({
       competition_id: id,
@@ -106,12 +112,20 @@ export default function CompetitionDetailPage() {
     });
 
     if (error) {
-      toast.error(error.message);
+      if (error.code === '23505') {
+        toast.success('Already registered!');
+        setIsRegistered(true);
+      } else {
+        toast.error(error.message);
+      }
     } else {
       toast.success('Registered!');
       setIsRegistered(true);
       setCompetitorCount(c => c + 1);
     }
+
+    setRegistering(false);
+    registeringRef.current = false;
   };
 
   if (loading) return <p className="text-muted-foreground">Loading...</p>;
@@ -172,7 +186,7 @@ export default function CompetitionDetailPage() {
               {competition.status}
             </Badge>
             {!isOwner && !isRegistered && (
-              <Button onClick={handleRegister}>Register</Button>
+              <Button onClick={handleRegister} disabled={registering}>{registering ? 'Registering...' : 'Register'}</Button>
             )}
             {isRegistered && !isOwner && (
               <Badge variant="outline">Registered</Badge>
