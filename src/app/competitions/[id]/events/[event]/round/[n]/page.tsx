@@ -100,14 +100,17 @@ export default function RoundPage() {
   const roundFormat = ((round as any)?.round_format || compEvent?.event_format) as 'average' | 'mean';
   const solveCount = roundFormat === 'mean' ? 3 : 5;
 
-  // Timer auto-fills the next solve
+  // Timer auto-fills the next solve — uses functional state update
+  // so solveNum is always derived from the latest times, never stale
   const handleTimerResult = (timeMs: number, penalty: string) => {
-    const solveNum = timesFilledCount + 1;
-    if (solveNum > solveCount) return;
-    const timeStr = timeMs > 0 ? (timeMs / 1000).toFixed(2) : '';
-    setTimes(p => ({ ...p, [solveNum]: timeStr }));
-    setPenalties(p => ({ ...p, [solveNum]: penalty || 'none' }));
-    toast.success(`${penalty === 'DNF' ? 'DNF' : timeStr}s for solve ${solveNum}`);
+    setTimes(prev => {
+      const nextNum = Object.keys(prev).length + 1;
+      if (nextNum > solveCount) return prev;
+      const timeStr = timeMs > 0 ? (timeMs / 1000).toFixed(2) : '';
+      setPenalties(p2 => ({ ...p2, [nextNum]: penalty || 'none' }));
+      toast.success(`${penalty === 'DNF' ? 'DNF' : timeStr}s for solve ${nextNum}`);
+      return { ...prev, [nextNum]: timeStr };
+    });
   };
 
   const timesFilledCount = Object.keys(times).length;

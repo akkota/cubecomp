@@ -19,15 +19,22 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
   const [penalty, setPenalty] = useState<string | null>(null);
   const [inspectionActive, setInspectionActive] = useState(false);
 
+  // ── Refs to avoid stale closures in event listeners ──
+  const stateRef = useRef<TimerState>('idle');
+  const onTimeRecordedRef = useRef(onTimeRecorded);
+  const solveIndexRef = useRef(solveIndex);
+  const solveCountRef = useRef(solveCount);
   const startTimeRef = useRef(0);
   const rafRef = useRef(0);
   const inspectionRafRef = useRef(0);
   const inspectionStartRef = useRef(0);
   const holdStartRef = useRef(0);
-  const stateRef = useRef<TimerState>('idle');
-  const armedRef = useRef(false);
 
+  // Keep refs in sync
   useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { onTimeRecordedRef.current = onTimeRecorded; }, [onTimeRecorded]);
+  useEffect(() => { solveIndexRef.current = solveIndex; }, [solveIndex]);
+  useEffect(() => { solveCountRef.current = solveCount; }, [solveCount]);
 
   const cleanup = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
@@ -41,57 +48,62 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
     setInspection(15);
     setPenalty(null);
     setInspectionActive(false);
-    armedRef.current = false;
   }, [cleanup]);
 
   const isLastSolve = solveIndex >= solveCount;
 
+  // ── Accept the current time and advance ──
+  const handleAccept = useCallback(() => {
+    if (solveIndexRef.current >= solveCountRef.current) return;
+    const idx = solveIndexRef.current;
+    const effectiveMs = penalty === 'DNF' ? 0 : time;
+    const penaltyStr = penalty || 'none';
+    // Notify parent — parent will update state and re-render with +1 solveIndex
+    onTimeRecordedRef.current(effectiveMs, penaltyStr);
+    reset();
+  }, [time, penalty, reset]);
+
   // ── Spacebar key handlers ──
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat || isLastSolve) return;
+      if (e.code !== 'Space' || e.repeat) return;
+      // Check isLastSolve via ref (always fresh)
+      if (solveIndexRef.current >= solveCountRef.current) return;
       e.preventDefault();
       const st = stateRef.current;
 
       if (st === 'idle') {
-        // Start inspection
         setState('inspection');
         setInspection(15);
         setInspectionActive(true);
         inspectionStartRef.current = Date.now();
         holdStartRef.current = 0;
-        armedRef.current = false;
       } else if (st === 'inspection') {
-        // Start holding — start tracking hold duration
         holdStartRef.current = Date.now();
       } else if (st === 'running') {
-        // Stop timer
         const elapsed = Date.now() - startTimeRef.current;
         setTime(elapsed);
         setState('stopped');
         cleanup();
       } else if (st === 'stopped') {
-        // Accept the time, go to next
         handleAccept();
       }
     };
 
     const onUp = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || isLastSolve) return;
+      if (e.code !== 'Space') return;
+      if (solveIndexRef.current >= solveCountRef.current) return;
       e.preventDefault();
       const st = stateRef.current;
 
       if (st === 'inspection' && holdStartRef.current > 0) {
         const held = Date.now() - holdStartRef.current;
         if (held >= 500) {
-          // Held long enough — start solving timer
           setInspectionActive(false);
           startTimeRef.current = Date.now();
           setState('running');
-          armedRef.current = false;
           holdStartRef.current = 0;
         } else {
-          // Too short, cancel the arm
           holdStartRef.current = 0;
         }
       }
@@ -103,11 +115,11 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
       window.removeEventListener('keydown', onDown);
       window.removeEventListener('keyup', onUp);
     };
-  }, [isLastSolve, cleanup]);
+  }, [cleanup, handleAccept]);
 
   // ── Mouse/touch handlers ──
   const handlePointerDown = useCallback(() => {
-    if (isLastSolve) return;
+    if (solveIndexRef.current >= solveCountRef.current) return;
     const st = stateRef.current;
     if (st === 'idle') {
       setState('inspection');
@@ -115,7 +127,6 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
       setInspectionActive(true);
       inspectionStartRef.current = Date.now();
       holdStartRef.current = 0;
-      armedRef.current = false;
     } else if (st === 'inspection') {
       holdStartRef.current = Date.now();
     } else if (st === 'running') {
@@ -126,10 +137,10 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
     } else if (st === 'stopped') {
       handleAccept();
     }
-  }, [isLastSolve, cleanup]);
+  }, [cleanup, handleAccept]);
 
   const handlePointerUp = useCallback(() => {
-    if (isLastSolve) return;
+    if (solveIndexRef.current >= solveCountRef.current) return;
     const st = stateRef.current;
     if (st === 'inspection' && holdStartRef.current > 0) {
       const held = Date.now() - holdStartRef.current;
@@ -137,13 +148,12 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
         setInspectionActive(false);
         startTimeRef.current = Date.now();
         setState('running');
-        armedRef.current = false;
         holdStartRef.current = 0;
       } else {
         holdStartRef.current = 0;
       }
     }
-  }, [isLastSolve]);
+  }, []);
 
   // ── Timer animation loop ──
   useEffect(() => {
@@ -165,7 +175,6 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
         const remaining = Math.max(0, 15 - elapsed / 1000);
         setInspection(remaining);
         if (remaining <= 0) {
-          // Inspection expired — auto-start solving timer
           setInspectionActive(false);
           startTimeRef.current = Date.now();
           setState('running');
@@ -179,22 +188,14 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
   }, [inspectionActive, state]);
 
   // ── Penalty handlers ──
-  const applyPenalty = (p: string) => {
+  const applyPenalty = useCallback((p: string) => {
     if (p === '+2') {
       setTime(prev => prev + 2000);
       setPenalty('+2');
     } else if (p === 'DNF') {
       setPenalty('DNF');
     }
-  };
-
-  const handleAccept = () => {
-    if (isLastSolve) return;
-    const effectiveMs = penalty === 'DNF' ? 0 : time;
-    const penaltyStr = penalty || 'none';
-    onTimeRecorded(effectiveMs, penaltyStr);
-    reset();
-  };
+  }, []);
 
   // ── Display formatting ──
   const formatDisplay = (ms: number) => {
@@ -213,7 +214,6 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
       if (inspection <= 10) return 'text-cube-orange';
       return 'text-cube-green';
     }
-    if (state === 'armed') return 'text-cube-green';
     if (state === 'running') return 'text-cube-blue';
     if (state === 'stopped') return penalty === 'DNF' ? 'text-destructive' : 'text-foreground';
     return 'text-text-tertiary';
@@ -241,7 +241,7 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
     );
   }
 
-  const showInspection = state === 'inspection' || state === 'armed';
+  const showInspection = state === 'inspection';
 
   return (
     <div className="space-y-3 select-none">
@@ -273,9 +273,7 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
                 {Math.ceil(inspection)}
               </span>
               <div className="mt-2 text-xs text-text-tertiary/50">
-                {holdStartRef.current > 0
-                  ? 'Hold to arm…'
-                  : 'Hold spacebar/click to arm the timer'}
+                Hold spacebar/click to arm the timer
               </div>
             </div>
           ) : (
@@ -304,7 +302,7 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
               <Button
                 variant={penalty === '+2' ? 'default' : 'ghost'}
                 size="sm"
-                onClick={() => applyPenalty(penalty === '+2' ? '+2' : '+2')}
+                onClick={() => applyPenalty('+2')}
                 className={`h-7 text-xs gap-1 ${penalty === '+2' ? 'bg-cube-orange hover:bg-cube-orange/90' : 'text-cube-orange'}`}
               >
                 <AlertTriangle className="h-3 w-3" /> +2
@@ -342,9 +340,6 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
           {state === 'running' && 'Tap space or click to stop'}
           {state === 'stopped' && 'Apply +2/DNF, then Accept or Retry'}
         </span>
-        {penalty && state === 'stopped' && (
-          <span className="font-semibold text-cube-orange">{penalty === 'DNF' ? 'DNF' : `+${((time/1000) - ((time-2000)/1000)).toFixed(2)}`}</span>
-        )}
       </div>
     </div>
   );
