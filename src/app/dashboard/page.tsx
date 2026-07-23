@@ -150,7 +150,7 @@ export default function DashboardPage() {
   const completedCount = created.filter(c => c._displayStatus === 'completed').length;
   const competingLive = competing.filter(c => c._displayStatus === 'ongoing').length;
   const competingCompleted = competing.filter(c => c._displayStatus === 'completed').length;
-  const adminCount = adminOf.length;
+  const adminCount = created.length + adminOf.length;
 
   return (
     <div className="space-y-8">
