@@ -156,8 +156,9 @@ export default function RoundPage() {
 
     try {
       const r = await submitTimesAction(round.id, params.id, solves);
-      if (!r.success) { toast.error(r.error); return; }
+      if (!r.success) { toast.error(r.error); setSubmitting(false); submittingRef.current = false; return; }
       toast.success('Times submitted!');
+      setAlreadySubmitted(true);
       // Refresh
       const {data:{user}} = await supabase.auth.getUser();
       const {data:comp} = await supabase.from('competitors').select('id').eq('competition_id',params.id).eq('user_id',user!.id).single();

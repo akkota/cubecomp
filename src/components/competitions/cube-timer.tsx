@@ -119,6 +119,8 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
         setState('stopped');
         cleanup();
       } else if (st === 'stopped') {
+        // Don't accept on spacebar if user is interacting with a button
+        if (document.activeElement?.tagName === 'BUTTON') return;
         recordAndAdvance();
       }
     };
@@ -165,6 +167,8 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
       setState('stopped');
       cleanup();
     } else if (st === 'stopped') {
+      // Don't accept if tapping a button inside the timer
+      if (document.activeElement?.tagName === 'BUTTON') return;
       recordAndAdvance();
     }
   }, [cleanup, recordAndAdvance]);
@@ -288,7 +292,7 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
 
         {state === 'stopped' && (
           <div className="absolute bottom-2 left-0 right-0 flex items-center justify-center gap-2 flex-wrap">
-            <Button variant="ghost" size="sm" onClick={reset} className="h-7 text-xs gap-1">
+            <Button variant="ghost" size="sm" type="button" onClick={reset} className="h-7 text-xs gap-1">
               <RotateCcw className="h-3 w-3" /> Retry
             </Button>
             <Button
@@ -307,7 +311,7 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
             >
               <Ban className="h-3 w-3" /> DNF
             </Button>
-            <Button variant="default" size="sm" onClick={recordAndAdvance} className="h-7 text-xs gap-1">
+            <Button variant="default" size="sm" type="button" onClick={recordAndAdvance} className="h-7 text-xs gap-1">
               <Check className="h-3 w-3" /> Accept
             </Button>
           </div>
