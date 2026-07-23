@@ -12,7 +12,7 @@ import { getEventByKey, formatTime } from '@/lib/wca-events';
 import { RoundLeaderboard } from '@/components/competitions/leaderboard';
 import { submitTimesAction } from '@/actions/submitTimes';
 import { toast } from 'sonner';
-import { Clock, Lock, Send, AlertTriangle } from 'lucide-react';
+import { Clock, Lock, Send, AlertTriangle, CuboidIcon as CubeIcon, Trophy } from 'lucide-react';
 
 type ScrambleEntry = { id: string; scramble_number: number; scramble: string };
 type SolveEntry = { solve_number: number; time_ms: number | null; penalty: string };
@@ -291,18 +291,27 @@ export default function RoundPage() {
     return null;
   };
 
-  if (loading) return <p className="text-muted-foreground">Loading round...</p>;
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="animate-pulse text-center">
+        <CubeIcon className="mx-auto h-8 w-8 text-muted-foreground/40" />
+        <p className="mt-3 text-sm text-muted-foreground">Loading round...</p>
+      </div>
+    </div>
+  );
 
   return (
     <div>
+      {/* Page header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">
+        <h1 className="text-2xl font-bold tracking-tight">
           {competition?.name}
         </h1>
-        <p className="text-muted-foreground">
-          {wcaEvent?.icon} {wcaEvent?.name} — Round {params.n}
+        <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+          <span className="text-lg">{wcaEvent?.icon}</span>
+          {wcaEvent?.name} <span className="text-muted-foreground/50">—</span> Round {params.n}
           {round && (
-            <Badge className="ml-2" variant={
+            <Badge variant={
               round.status === 'active' ? 'destructive' :
               round.status === 'completed' ? 'secondary' : 'outline'
             }>
@@ -315,18 +324,23 @@ export default function RoundPage() {
       {/* Access blocked message */}
       {renderBlockedMessage()}
 
-      {/* Scrambles — only show if granted access AND scrambles exist */}
+      {/* Scrambles */}
       {accessState === 'granted' && scrambles.length > 0 && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-base">Scrambles</CardTitle>
+        <Card className="mb-6 border-border/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CubeIcon className="h-4 w-4 text-cube-blue" />
+              Scrambles
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-1">
+            <div className="grid gap-2 sm:grid-cols-2">
               {scrambles.map(s => (
-                <div key={s.id} className="flex gap-2 rounded bg-muted p-2 text-sm">
-                  <span className="w-5 font-bold text-muted-foreground">{s.scramble_number}.</span>
-                  <span className="font-mono">{s.scramble}</span>
+                <div key={s.id} className="flex gap-2.5 rounded-lg border border-border/40 bg-muted/30 p-3 text-sm">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-cube-blue/10 text-xs font-bold text-cube-blue">
+                    {s.scramble_number}
+                  </span>
+                  <code className="font-mono text-xs leading-relaxed">{s.scramble}</code>
                 </div>
               ))}
             </div>
@@ -334,12 +348,12 @@ export default function RoundPage() {
         </Card>
       )}
 
-      {/* Time Entry — only for active rounds with access granted */}
+      {/* Time Entry */}
       {accessState === 'granted' && round?.status === 'active' && (
-        <Card className="mb-6">
-          <CardHeader>
+        <Card className="mb-6 border-border/50">
+          <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Clock className="h-4 w-4" />
+              <Clock className="h-4 w-4 text-cube-green" />
               Enter Times
             </CardTitle>
           </CardHeader>
@@ -387,9 +401,12 @@ export default function RoundPage() {
       )}
 
       {/* Leaderboard */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Leaderboard</CardTitle>
+      <Card className="border-border/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Trophy className="h-4 w-4 text-cube-yellow" />
+            Leaderboard
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <RoundLeaderboard

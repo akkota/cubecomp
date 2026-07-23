@@ -6,13 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
 import { createClient } from '@/lib/supabase/client';
 import { WCA_EVENTS } from '@/lib/wca-events';
 import { generateScramblesAction } from '@/actions/generateScrambles';
 import { calculateAdvancementAction } from '@/actions/calculateAdvancement';
 import { toast } from 'sonner';
-import { ArrowUp, Play, Square, ShuffleIcon, Users, Trophy, CheckCircle2 } from 'lucide-react';
+import { ArrowUp, Play, Square, ShuffleIcon, Users, Trophy, CheckCircle2, CuboidIcon as CubeIcon, Shield } from 'lucide-react';
 
 export default function CompetitionAdminPage() {
   const { id } = useParams<{ id: string }>();
@@ -28,6 +27,7 @@ export default function CompetitionAdminPage() {
   const [startingRound, setStartingRound] = useState<string | null>(null);
   const [endingRound, setEndingRound] = useState<string | null>(null);
   const [registering, setRegistering] = useState(false);
+  const generatingRef = useRef<Set<string>>(new Set());
   const startingRef = useRef<string | null>(null);
   const endingRef = useRef<string | null>(null);
   const registeringRef = useRef(false);
@@ -53,7 +53,6 @@ export default function CompetitionAdminPage() {
       setCompetition(comp);
       setIsOwner(true);
 
-      // Check if admin is also registered as a competitor
       const { data: existingReg } = await supabase
         .from('competitors')
         .select('id')
@@ -78,7 +77,6 @@ export default function CompetitionAdminPage() {
           .order('round_number');
         setAllRounds(rounds ?? []);
 
-        // Fetch existing scrambles for all rounds
         const roundIds = (rounds ?? []).map(r => r.id);
         if (roundIds.length > 0) {
           const { data: s } = await supabase
@@ -105,10 +103,7 @@ export default function CompetitionAdminPage() {
 
   const wcaEvent = (key: string) => WCA_EVENTS.find(e => e.key === key);
 
-  const generatingRef = useRef<Set<string>>(new Set());
-
   const handleGenerateScrambles = async (round: any, eventKey: string, solveCount: number) => {
-    // Guard against double-clicks before React re-renders
     if (generatingRef.current.has(round.id)) return;
     generatingRef.current.add(round.id);
     setGenerating(prev => ({ ...prev, [round.id]: true }));
@@ -116,7 +111,7 @@ export default function CompetitionAdminPage() {
       await Promise.race([
         generateScramblesAction(round.id, eventKey, solveCount),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Scramble generation timed out. Vercel serverless functions have a 10s limit — try again or upgrade to Pro.')), 25000)
+          setTimeout(() => reject(new Error('Scramble generation timed out. Try again.')), 25000)
         ),
       ]);
       const { data: freshScrambles } = await supabase
@@ -135,60 +130,41 @@ export default function CompetitionAdminPage() {
   };
 
   const handleStartRound = async (roundId: string) => {
-    // Guard against double-clicks
     if (startingRef.current) return;
     startingRef.current = roundId;
     setStartingRound(roundId);
-
-    const { error } = await supabase
-      .from('rounds')
+    const { error } = await supabase.from('rounds')
       .update({ status: 'active', started_at: new Date().toISOString() })
       .eq('id', roundId);
-
     if (error) { toast.error(error.message); } else {
       toast.success('Round started!');
-      setAllRounds(prev =>
-        prev.map(r => r.id === roundId ? { ...r, status: 'active', started_at: new Date().toISOString() } : r)
-      );
+      setAllRounds(prev => prev.map(r => r.id === roundId ? { ...r, status: 'active', started_at: new Date().toISOString() } : r));
     }
-
     setStartingRound(null);
     startingRef.current = null;
   };
 
   const handleEndRound = async (roundId: string) => {
-    // Guard against double-clicks
     if (endingRef.current) return;
     endingRef.current = roundId;
     setEndingRound(roundId);
-
-    const { error } = await supabase
-      .from('rounds')
+    const { error } = await supabase.from('rounds')
       .update({ status: 'completed', ended_at: new Date().toISOString() })
       .eq('id', roundId);
-
     if (error) { toast.error(error.message); } else {
       toast.success('Round ended!');
-      setAllRounds(prev =>
-        prev.map(r => r.id === roundId ? { ...r, status: 'completed', ended_at: new Date().toISOString() } : r)
-      );
+      setAllRounds(prev => prev.map(r => r.id === roundId ? { ...r, status: 'completed', ended_at: new Date().toISOString() } : r));
     }
-
     setEndingRound(null);
     endingRef.current = null;
   };
 
   const handleSetAdvanceCount = async (roundId: string, count: number) => {
-    const { error } = await supabase
-      .from('rounds')
+    const { error } = await supabase.from('rounds')
       .update({ advance_count: count })
       .eq('id', roundId);
-
     if (error) { toast.error(error.message); return; }
-    toast.success('Cutoff set');
-    setAllRounds(prev =>
-      prev.map(r => r.id === roundId ? { ...r, advance_count: count } : r)
-    );
+    setAllRounds(prev => prev.map(r => r.id === roundId ? { ...r, advance_count: count } : r));
   };
 
   const handleCalculateAdvancement = async (round: any) => {
@@ -198,16 +174,11 @@ export default function CompetitionAdminPage() {
       if (!result.success) {
         toast.error(result.error);
       } else if (result.alreadyCalculated) {
-        toast.success(`Already calculated — ${result.advanced} already advanced to Round ${result.nextRoundNumber}`);
+        toast.success(`Already calculated — ${result.advanced} advanced to Round ${result.nextRoundNumber}`);
       } else if (result.advanced === 0) {
-        toast.warning(
-          `No one advanced to Round ${result.nextRoundNumber}. ` +
-          `${result.total} competitors submitted times${result.dnfCount ? ` (${result.dnfCount} DNF'd)` : ''}`
-        );
+        toast.warning(`No one advanced to Round ${result.nextRoundNumber}. ${result.total} submitted${result.dnfCount ? ` (${result.dnfCount} DNF'd)` : ''}`);
       } else {
-        toast.success(
-          `${result.advanced} of ${result.total} advanced to Round ${result.nextRoundNumber}`
-        );
+        toast.success(`${result.advanced} of ${result.total} advanced to Round ${result.nextRoundNumber}`);
       }
     } catch (err: any) {
       toast.error(err.message || 'Something went wrong');
@@ -220,51 +191,55 @@ export default function CompetitionAdminPage() {
     if (registeringRef.current) return;
     registeringRef.current = true;
     setRegistering(true);
-
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { toast.error('Login required'); registeringRef.current = false; setRegistering(false); return; }
-
-    const { error } = await supabase.from('competitors').insert({
-      competition_id: id,
-      user_id: user.id,
-    });
-
+    const { error } = await supabase.from('competitors').insert({ competition_id: id, user_id: user.id });
     if (error) {
-      if (error.code === '23505') {
-        toast.success('Already registered!');
-      } else {
-        toast.error(error.message);
-      }
+      if (error.code === '23505') { toast.success('Already registered!'); } else { toast.error(error.message); }
     } else {
       toast.success('Registered as competitor!');
       setIsRegistered(true);
     }
-
     setRegistering(false);
     registeringRef.current = false;
   };
 
-  if (loading) return <p className="text-muted-foreground">Loading admin panel...</p>;
-  if (!competition) return <p>Competition not found.</p>;
+  if (loading) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="animate-pulse text-center">
+        <CubeIcon className="mx-auto h-8 w-8 text-muted-foreground/40" />
+        <p className="mt-3 text-sm text-muted-foreground">Loading admin panel...</p>
+      </div>
+    </div>
+  );
+  if (!competition) return <p className="text-center text-muted-foreground py-20">Competition not found.</p>;
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Admin: {competition.name}</h1>
-          <p className="text-muted-foreground">Manage rounds, scrambles, and cutoffs</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Badge variant="outline">{competition.status}</Badge>
-          {isRegistered ? (
-            <Badge variant="secondary">
-              <CheckCircle2 className="mr-1 h-3 w-3" /> Competing
-            </Badge>
-          ) : (
-            <Button variant="outline" size="sm" onClick={handleRegisterAsCompetitor} disabled={registering}>
-              <Trophy className="mr-1 h-3 w-3" /> {registering ? 'Registering...' : 'Compete as competitor'}
-            </Button>
-          )}
+      {/* Header */}
+      <div className="mb-8 rounded-xl border border-border/50 bg-gradient-to-br from-background to-cube-orange/5 p-6 sm:p-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-cube-orange/10 p-2">
+              <Shield className="h-5 w-5 text-cube-orange" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{competition.name}</h1>
+              <p className="text-sm text-muted-foreground">Manage rounds, scrambles, and cutoffs</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Badge variant="outline">{competition.status}</Badge>
+            {isRegistered ? (
+              <Badge variant="secondary" className="gap-1.5">
+                <CheckCircle2 className="h-3 w-3 text-cube-green" /> Competing
+              </Badge>
+            ) : (
+              <Button variant="outline" size="sm" onClick={handleRegisterAsCompetitor} disabled={registering} className="gap-2">
+                <Trophy className="h-4 w-4" /> {registering ? 'Registering...' : 'Compete as Competitor'}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -275,118 +250,98 @@ export default function CompetitionAdminPage() {
           const solveCount = eventInfo?.solveCount ?? 5;
 
           return (
-            <Card key={cEvent.id}>
-              <CardHeader>
+            <Card key={cEvent.id} className="border-border/50 overflow-hidden">
+              <CardHeader className="border-b border-border/30 bg-muted/20 pb-3">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <span>{eventInfo?.icon}</span>
                   {eventInfo?.name}
-                  <Badge variant="outline" className="ml-2">
-                    {cEvent.round_count} rounds
-                  </Badge>
+                  <Badge variant="outline" className="ml-auto text-xs">{cEvent.round_count} rounds</Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="p-0 divide-y divide-border/30">
                 {eventRounds.map(round => {
                   const roundScrambles = scrambles[round.id] || [];
                   const hasScrambles = roundScrambles.length > 0;
                   const hasNextRound = round.round_number < cEvent.round_count;
 
                   return (
-                    <div key={round.id} className="rounded-lg border p-4">
-                      <div className="mb-3 flex items-center justify-between">
+                    <div key={round.id} className="px-4 py-4 sm:px-6">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-3">
                           <h3 className="font-semibold">Round {round.round_number}</h3>
                           <Badge variant={
                             round.status === 'completed' ? 'secondary' :
-                            round.status === 'active' ? 'destructive' :
-                            'outline'
-                          }>
-                            {round.status}
-                          </Badge>
+                            round.status === 'active' ? 'destructive' : 'outline'
+                          }>{round.status}</Badge>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {round.status === 'pending' && (
                             <>
-                              <Button
-                                variant="outline"
-                                size="sm"
+                              <Button variant="outline" size="sm"
                                 disabled={generating[round.id] || hasScrambles}
                                 onClick={() => handleGenerateScrambles(round, cEvent.event_key, solveCount)}
+                                className="gap-1.5"
                               >
-                                <ShuffleIcon className="mr-1 h-3 w-3" />
+                                <ShuffleIcon className="h-3.5 w-3.5" />
                                 {generating[round.id] ? 'Generating...' : hasScrambles ? 'Has Scrambles' : 'Generate Scrambles'}
                               </Button>
                               {hasScrambles && (
-                                <Button
-                                  variant="default"
-                                  size="sm"
-                                  disabled={startingRound === round.id}
+                                <Button variant="default" size="sm"
+                                  disabled={!!startingRound}
                                   onClick={() => handleStartRound(round.id)}
+                                  className="gap-1.5"
                                 >
-                                  <Play className="mr-1 h-3 w-3" /> {startingRound === round.id ? 'Starting...' : 'Start'}
+                                  <Play className="h-3.5 w-3.5" /> {startingRound === round.id ? 'Starting...' : 'Start'}
                                 </Button>
                               )}
                             </>
                           )}
                           {round.status === 'active' && (
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              disabled={endingRound === round.id}
+                            <Button variant="destructive" size="sm"
+                              disabled={!!endingRound}
                               onClick={() => handleEndRound(round.id)}
+                              className="gap-1.5"
                             >
-                              <Square className="mr-1 h-3 w-3" /> {endingRound === round.id ? 'Ending...' : 'End Round'}
+                              <Square className="h-3.5 w-3.5" /> {endingRound === round.id ? 'Ending...' : 'End Round'}
                             </Button>
                           )}
                           {round.status === 'completed' && hasNextRound && (
-                            <Button
-                              variant="default"
-                              size="sm"
+                            <Button variant="default" size="sm"
                               disabled={calculating[round.id]}
                               onClick={() => handleCalculateAdvancement(round)}
+                              className="gap-1.5"
                             >
-                              <ArrowUp className="mr-1 h-3 w-3" />
+                              <ArrowUp className="h-3.5 w-3.5" />
                               {calculating[round.id] ? 'Calculating...' : 'Calculate Advancement'}
                             </Button>
                           )}
                         </div>
                       </div>
 
-                      {/* Advance cutoff */}
-                      {round.round_number < cEvent.round_count && (
-                        <div className="mb-3 flex items-center gap-3">
-                          <Users className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">Advance top:</span>
-                          <Input
-                            type="number"
-                            className="w-20 h-8"
-                            placeholder="Auto"
-                            min={1}
-                            value={round.advance_count ?? ''}
-                            onChange={e => handleSetAdvanceCount(round.id, parseInt(e.target.value || '0'))}
-                          />
-                          <span className="text-xs text-muted-foreground">
-                            to round {round.round_number + 1}
-                          </span>
-                        </div>
-                      )}
+                      {/* Advance cutoff + scrambles row */}
+                      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        {round.round_number < cEvent.round_count && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Users className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-muted-foreground">Advance top:</span>
+                            <Input type="number" className="w-20 h-8" placeholder="Auto" min={1}
+                              value={round.advance_count ?? ''}
+                              onChange={e => handleSetAdvanceCount(round.id, parseInt(e.target.value || '0'))} />
+                            <span className="text-xs text-muted-foreground">to round {round.round_number + 1}</span>
+                          </div>
+                        )}
 
-                      {/* Scrambles display */}
-                      {hasScrambles && (
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-muted-foreground">Scrambles:</p>
-                          <div className="rounded bg-muted p-3 text-xs">
+                        {hasScrambles && (
+                          <div className="flex flex-wrap gap-1.5">
                             {roundScrambles.map(s => (
-                              <div key={s.id} className="flex gap-2">
-                                <span className="font-mono font-bold text-muted-foreground w-4">
-                                  {s.scramble_number}.
-                                </span>
-                                <span className="font-mono">{s.scramble}</span>
-                              </div>
+                              <span key={s.id} className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-2 py-1 text-xs font-mono">
+                                <span className="font-bold text-cube-blue">{s.scramble_number}</span>
+                                {s.scramble}
+                              </span>
                             ))}
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   );
                 })}

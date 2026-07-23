@@ -5,8 +5,8 @@ import { createClient } from '@/lib/supabase/client';
 import { calculateResult, formatTime, getEventByKey } from '@/lib/wca-events';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { Round, Solve, Competitor } from '@/types/database';
+import type { Solve } from '@/types/database';
+import { CuboidIcon as CubeIcon, Medal, Award, Trophy } from 'lucide-react';
 
 interface Props {
   roundId: string;
@@ -22,6 +22,12 @@ type SolveRow = {
   solves: (number | null)[];
 };
 
+const TOP_BADGES = [
+  { icon: 'trophy', className: 'text-cube-yellow bg-cube-yellow/10 border-cube-yellow/20', label: '1st' },
+  { icon: 'medal', className: 'text-muted-foreground bg-muted/50 border-border', label: '2nd' },
+  { icon: 'award', className: 'text-cube-orange bg-cube-orange/10 border-cube-orange/20', label: '3rd' },
+];
+
 export function RoundLeaderboard({ roundId, eventKey, format, solveCount }: Props) {
   const [solves, setSolves] = useState<SolveRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +36,6 @@ export function RoundLeaderboard({ roundId, eventKey, format, solveCount }: Prop
     const fetchSolves = async () => {
       const supabase = createClient();
 
-      // Fetch teammates for these solves
       const { data: solvesData } = await supabase
         .from('solves')
         .select('*, competitor:competitor_id (*, user:user_id (id, username, display_name))')
@@ -40,7 +45,6 @@ export function RoundLeaderboard({ roundId, eventKey, format, solveCount }: Prop
 
       if (!solvesData) { setLoading(false); return; }
 
-      // Group solves by competitor
       const grouped = new Map<string, (number | null)[]>();
       const meta = new Map<string, { username: string; display_name: string | null }>();
 
@@ -63,15 +67,9 @@ export function RoundLeaderboard({ roundId, eventKey, format, solveCount }: Prop
       const rows: SolveRow[] = [];
       for (const [cId, solves] of grouped) {
         const m = meta.get(cId)!;
-        rows.push({
-          competitor_id: cId,
-          username: m.username,
-          display_name: m.display_name,
-          solves,
-        });
+        rows.push({ competitor_id: cId, username: m.username, display_name: m.display_name, solves });
       }
 
-      // Sort by result (best first)
       rows.sort((a, b) => {
         const resA = calculateResult(a.solves, format);
         const resB = calculateResult(b.solves, format);
@@ -90,39 +88,74 @@ export function RoundLeaderboard({ roundId, eventKey, format, solveCount }: Prop
     fetchSolves();
   }, [roundId]);
 
-  if (loading) return <p className="text-muted-foreground">Loading leaderboard...</p>;
-  if (solves.length === 0) return <p className="text-muted-foreground">No times submitted yet.</p>;
+  if (loading) return (
+    <div className="flex items-center justify-center py-8">
+      <div className="animate-pulse text-center">
+        <CubeIcon className="mx-auto h-6 w-6 text-muted-foreground/40" />
+        <p className="mt-2 text-xs text-muted-foreground">Loading leaderboard...</p>
+      </div>
+    </div>
+  );
+
+  if (solves.length === 0) return (
+    <div className="flex flex-col items-center gap-2 py-8">
+      <CubeIcon className="h-8 w-8 text-muted-foreground/40" />
+      <p className="text-sm text-muted-foreground">No times submitted yet.</p>
+    </div>
+  );
 
   return (
-    <div>
+    <div className="overflow-x-auto">
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead className="w-12">#</TableHead>
-            <TableHead>Competitor</TableHead>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-10 text-xs uppercase tracking-wider text-muted-foreground">#</TableHead>
+            <TableHead className="text-xs uppercase tracking-wider text-muted-foreground">Competitor</TableHead>
             {Array.from({ length: solveCount }, (_, i) => (
-              <TableHead key={i} className="text-center">S{i + 1}</TableHead>
+              <TableHead key={i} className="text-center text-xs uppercase tracking-wider text-muted-foreground w-16">
+                S{i + 1}
+              </TableHead>
             ))}
-            <TableHead className="text-right font-bold">Result</TableHead>
+            <TableHead className="text-right text-xs uppercase tracking-wider text-muted-foreground">Result</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {solves.map((row, idx) => {
             const result = calculateResult(row.solves, format);
             return (
-              <TableRow key={row.competitor_id}>
-                <TableCell className="font-bold">{idx + 1}</TableCell>
-                <TableCell>
+              <TableRow key={row.competitor_id} className={idx < 3 ? 'bg-muted/20' : ''}>
+                <TableCell className="font-mono text-sm font-bold">
+                  {idx < 3 ? (
+                    <span className={`inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs ${TOP_BADGES[idx].className}`}>
+                      {idx === 0 ? <Trophy className="mr-1 h-3 w-3" /> : idx === 1 ? <Medal className="mr-1 h-3 w-3" /> : <Award className="mr-1 h-3 w-3" />}
+                      {TOP_BADGES[idx].label}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">{idx + 1}</span>
+                  )}
+                </TableCell>
+                <TableCell className="font-medium">
                   {row.display_name || row.username}
-                  {idx < 3 && <Badge variant="secondary" className="ml-2">Top {idx + 1}</Badge>}
                 </TableCell>
                 {Array.from({ length: solveCount }, (_, i) => (
-                  <TableCell key={i} className="text-center font-mono text-sm">
-                    {i < row.solves.length ? formatTime(row.solves[i]) : '—'}
+                  <TableCell key={i} className="text-center font-mono text-xs">
+                    {i < row.solves.length ? (
+                      <span className={row.solves[i] === null ? 'text-destructive' : ''}>
+                        {formatTime(row.solves[i])}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground/40">—</span>
+                    )}
                   </TableCell>
                 ))}
-                <TableCell className="text-right font-bold font-mono">
-                  {result === null ? '—' : formatTime(result)}
+                <TableCell className="text-right font-mono text-sm font-bold">
+                  {result === null ? (
+                    <span className="text-muted-foreground/40">—</span>
+                  ) : result === 'DNF' ? (
+                    <span className="text-destructive">DNF</span>
+                  ) : (
+                    formatTime(result)
+                  )}
                 </TableCell>
               </TableRow>
             );
