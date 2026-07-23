@@ -110,15 +110,14 @@ export default function RoundPage() {
   const solveCount = roundFormat === 'mean' ? 3 : 5;
 
   // Timer auto-fills the next solve — uses functional state update
-  // so solveNum is always derived from the latest times, never stale
+  // Timer contract: for +2 the timeMs already includes +2, penalty='none'.
+  // For DNF: timeMs=0, penalty='DNF'. Leaderboard handles everything else.
   const handleTimerResult = (timeMs: number, penalty: string) => {
     setTimes(prev => {
       const nextNum = Object.keys(prev).length + 1;
       if (nextNum > solveCount) return prev;
-      // DNF: write 'DNF' so handleSubmit can parse it. +2: store original time,
-      // leaderboard adds 2000ms. None: store time as-is.
       const timeStr = penalty === 'DNF' ? 'DNF' : (timeMs > 0 ? (timeMs / 1000).toFixed(2) : '');
-      setPenalties(p2 => ({ ...p2, [nextNum]: penalty || 'none' }));
+      setPenalties(p2 => ({ ...p2, [nextNum]: penalty === 'DNF' ? 'DNF' : 'none' }));
       toast.success(`${penalty === 'DNF' ? 'DNF' : timeStr}s for solve ${nextNum}`);
       return { ...prev, [nextNum]: timeStr };
     });
@@ -187,7 +186,7 @@ export default function RoundPage() {
             {round && <Badge variant={round.status==='active'?'destructive':round.status==='completed'?'secondary':'outline'}>{round.status}</Badge>}
           </p>
         </div>
-        {accessState==='granted'&&round?.status==='active'&&!alreadySubmitted&&<Button onClick={handleSubmit} disabled={submitting} size="sm" className="gap-2"><Send className="h-4 w-4"/>{submitting?'Saving…':'Submit Times'}</Button>}
+        {accessState==='granted'&&round?.status==='active'&&!alreadySubmitted&&Object.keys(times).length>0&&<Button onClick={handleSubmit} disabled={submitting} size="sm" className="gap-2"><Send className="h-4 w-4"/>{submitting?'Saving…':'Submit Times'}</Button>}
         {accessState==='granted'&&round?.status==='active'&&alreadySubmitted&&(
           <Badge variant="secondary" className="gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-cube-green"/> Submitted</Badge>
         )}
