@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { LogIn, Mail, Lock } from 'lucide-react';
@@ -46,11 +46,9 @@ export function LoginForm({ redirectTo = '/dashboard' }: Props) {
             <Label htmlFor="password">Password</Label>
             <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" /><Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} className="pl-9 h-10" required /></div>
           </div>
-        </CardContent>
-        <CardFooter className="flex-col gap-4 pt-2">
           <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Signing in…' : 'Sign In'}</Button>
-          <p className="text-sm text-text-secondary">Don&apos;t have an account? <a href="/signup" className="font-medium text-cube-blue hover:underline">Sign up</a></p>
-        </CardFooter>
+          <p className="text-center text-sm text-text-secondary">Don&apos;t have an account? <a href="/signup" className="font-medium text-cube-blue hover:underline">Sign up</a></p>
+        </CardContent>
       </form>
     </Card>
   );

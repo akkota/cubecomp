@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { UserPlus, Mail, Lock, User } from 'lucide-react';
@@ -48,11 +48,9 @@ export function SignupForm() {
             <Label htmlFor="password">Password</Label>
             <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary" /><Input id="password" type="password" placeholder="Min. 6 characters" value={password} onChange={e => setPassword(e.target.value)} className="pl-9 h-10" required minLength={6} /></div>
           </div>
-        </CardContent>
-        <CardFooter className="flex-col gap-4 pt-2">
           <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Creating account…' : 'Create Account'}</Button>
-          <p className="text-sm text-text-secondary">Already have an account? <a href="/login" className="font-medium text-cube-blue hover:underline">Log in</a></p>
-        </CardFooter>
+          <p className="text-center text-sm text-text-secondary">Already have an account? <a href="/login" className="font-medium text-cube-blue hover:underline">Log in</a></p>
+        </CardContent>
       </form>
     </Card>
   );
