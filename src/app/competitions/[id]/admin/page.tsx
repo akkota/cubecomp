@@ -90,7 +90,13 @@ export default function CompetitionAdminPage() {
   const handleGenerateScrambles = async (round: any, eventKey: string, solveCount: number) => {
     setGenerating(prev => ({ ...prev, [round.id]: true }));
     try {
-      await generateScramblesAction(round.id, eventKey, solveCount);
+      // Race against a timeout so the UI doesn't hang forever on Vercel's 10s limit
+      await Promise.race([
+        generateScramblesAction(round.id, eventKey, solveCount),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Scramble generation timed out. Vercel serverless functions have a 10s limit — try again or upgrade to Pro.')), 25000)
+        ),
+      ]);
       // Refetch scrambles from DB
       const { data: freshScrambles } = await supabase
         .from('scrambles')
