@@ -4,7 +4,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { Navbar } from '@/components/navbar';
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
 export const metadata: Metadata = {
   title: 'CubeComp — Rubik\'s Cube Competitions',
@@ -18,7 +18,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} min-h-screen bg-background antialiased`}>
+      <body className={`${inter.variable} min-h-screen bg-background antialiased`}>
         <Navbar />
         <main className="container mx-auto px-4 py-8">
           {children}

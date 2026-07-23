@@ -33,6 +33,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# scripts (dev tools, not part of app)
+/scripts/
+
 # vercel
 .vercel
 
