@@ -25,6 +25,7 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
   const solveIndexRef = useRef(solveIndex);
   const solveCountRef = useRef(solveCount);
   const startTimeRef = useRef(0);
+  const originalTimeRef = useRef(0); // time at moment of stop, before any +2
   const rafRef = useRef(0);
   const inspectionRafRef = useRef(0);
   const inspectionStartRef = useRef(0);
@@ -55,11 +56,9 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
   // ── Accept the current time and advance ──
   const handleAccept = useCallback(() => {
     if (solveIndexRef.current >= solveCountRef.current) return;
-    const idx = solveIndexRef.current;
-    const effectiveMs = penalty === 'DNF' ? 0 : time;
+    const rawTime = penalty === '+2' ? originalTimeRef.current : time;
     const penaltyStr = penalty || 'none';
-    // Notify parent — parent will update state and re-render with +1 solveIndex
-    onTimeRecordedRef.current(effectiveMs, penaltyStr);
+    onTimeRecordedRef.current(rawTime, penaltyStr);
     reset();
   }, [time, penalty, reset]);
 
@@ -82,6 +81,7 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
         holdStartRef.current = Date.now();
       } else if (st === 'running') {
         const elapsed = Date.now() - startTimeRef.current;
+        originalTimeRef.current = elapsed;
         setTime(elapsed);
         setState('stopped');
         cleanup();
@@ -131,6 +131,7 @@ export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
       holdStartRef.current = Date.now();
     } else if (st === 'running') {
       const elapsed = Date.now() - startTimeRef.current;
+      originalTimeRef.current = elapsed;
       setTime(elapsed);
       setState('stopped');
       cleanup();

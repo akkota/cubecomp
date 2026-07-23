@@ -106,7 +106,9 @@ export default function RoundPage() {
     setTimes(prev => {
       const nextNum = Object.keys(prev).length + 1;
       if (nextNum > solveCount) return prev;
-      const timeStr = timeMs > 0 ? (timeMs / 1000).toFixed(2) : '';
+      // DNF: write 'DNF' so handleSubmit can parse it. +2: store original time,
+      // leaderboard adds 2000ms. None: store time as-is.
+      const timeStr = penalty === 'DNF' ? 'DNF' : (timeMs > 0 ? (timeMs / 1000).toFixed(2) : '');
       setPenalties(p2 => ({ ...p2, [nextNum]: penalty || 'none' }));
       toast.success(`${penalty === 'DNF' ? 'DNF' : timeStr}s for solve ${nextNum}`);
       return { ...prev, [nextNum]: timeStr };
