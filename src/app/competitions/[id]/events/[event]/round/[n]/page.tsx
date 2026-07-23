@@ -66,7 +66,9 @@ export default function RoundPage() {
   }; run(); }, [params.id, params.event, params.n]);
 
   const wcaEvent = getEventByKey(params.event);
-  const solveCount = wcaEvent?.solveCount ?? 5;
+  // Per-round format: round_format overrides event-level format
+  const roundFormat = ((round as any)?.round_format || compEvent?.event_format) as 'average' | 'mean';
+  const solveCount = roundFormat === 'mean' ? 3 : 5;
 
   const handleSubmit = async () => {
     if (submittingRef.current) return;
@@ -148,7 +150,7 @@ export default function RoundPage() {
       {/* Leaderboard */}
       <Card className="border-border/30">
         <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Trophy className="h-4 w-4 text-cube-yellow"/>Leaderboard</CardTitle></CardHeader>
-        <CardContent><RoundLeaderboard roundId={round.id} eventKey={params.event} format={compEvent?.event_format??'average'} solveCount={solveCount}/></CardContent>
+        <CardContent><RoundLeaderboard roundId={round.id} eventKey={params.event} format={roundFormat} solveCount={solveCount}/></CardContent>
       </Card>
     </div>
   );

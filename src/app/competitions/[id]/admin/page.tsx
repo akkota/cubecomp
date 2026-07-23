@@ -10,7 +10,9 @@ import { createClient } from '@/lib/supabase/client';
 import { WCA_EVENTS } from '@/lib/wca-events';
 import { generateScramblesAction } from '@/actions/generateScrambles';
 import { calculateAdvancementAction } from '@/actions/calculateAdvancement';
+import type { AdvancementResult } from '@/types/advancement';
 import { toast } from 'sonner';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowUp, Play, Square, ShuffleIcon, Users, Trophy, CheckCircle2, CuboidIcon as CubeIcon, Shield } from 'lucide-react';
 
 const V: Record<string,'default'|'destructive'|'secondary'|'outline'>={upcoming:'default',ongoing:'destructive',completed:'secondary',cancelled:'outline'};
@@ -62,6 +64,11 @@ export default function CompetitionAdminPage() {
   const{data:f}=await supabase.from('scrambles').select('*').eq('round_id',r.id).order('scramble_number');setScrambles(p=>({...p,[r.id]:f??[]}));toast.success(`Scrambles generated`)}
   catch(e:any){toast.error(e.message)}finally{setGenerating(p=>({...p,[r.id]:false}));genRef.current.delete(r.id)}};
 
+  const updateRoundField = async (roundId:string, field:string, value:any) => {
+    const { error } = await supabase.from('rounds').update({ [field]: value }).eq('id', roundId);
+    if (!error) setAllRounds(p => p.map(r => r.id === roundId ? { ...r, [field]: value } : r));
+  };
+
   const hsr = async (rid:string)=>{if(startRef.current)return;startRef.current=rid;setStartingRound(rid);
   const{error}=await supabase.from('rounds').update({status:'active',started_at:new Date().toISOString()}).eq('id',rid);
   if(error){toast.error(error.message)}else{toast.success('Round started!');setAllRounds(p=>p.map(r=>r.id===rid?{...r,status:'active',started_at:new Date().toISOString()}:r))}
@@ -105,22 +112,59 @@ export default function CompetitionAdminPage() {
         <CardHeader className="border-b border-border/30 bg-surface-hover/20 pb-3"><CardTitle className="text-lg flex items-center gap-2">{ei?.icon} {ei?.name}<Badge variant="outline" className="ml-auto text-xs">{ce.round_count} rounds</Badge></CardTitle></CardHeader>
         <CardContent className="p-0 divide-y divide-border/30">
           {ers.map(r=>{const rs=scrambles[r.id]||[];const hs=rs.length>0;const hnr=r.round_number<ce.round_count;
+          const rf = (r.round_format || ce.event_format) as 'average'|'mean';
+          const rSolveCount = rf === 'mean' ? 3 : 5;
+          const advMode = r.advancement_mode || (r.advance_count ? 'fixed' : null);
+          const advVal = r.advancement_value ?? r.advance_count ?? null;
           return<div key={r.id} className="px-4 py-4 sm:px-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3"><h3 className="font-semibold">Round {r.round_number}</h3><Badge variant={V[r.status]??'outline'}>{r.status}</Badge></div>
               <div className="flex flex-wrap items-center gap-2">
                 {r.status==='pending'&&<>
-                  <Button variant="outline" size="sm" disabled={generating[r.id]||hs} onClick={()=>hgs(r,ce.event_key,sc)} className="gap-1.5"><ShuffleIcon className="h-3.5 w-3.5"/>{generating[r.id]?'Generating…':hs?'Has Scrambles':'Generate Scrambles'}</Button>
+                  <Button variant="outline" size="sm" disabled={generating[r.id]||hs} onClick={()=>hgs(r,ce.event_key,rSolveCount)} className="gap-1.5"><ShuffleIcon className="h-3.5 w-3.5"/>{generating[r.id]?'Generating…':hs?'Has Scrambles':'Generate Scrambles'}</Button>
                   {hs&&<Button variant="default" size="sm" disabled={!!startingRound} onClick={()=>hsr(r.id)} className="gap-1.5"><Play className="h-3.5 w-3.5"/>{startingRound===r.id?'Starting…':'Start'}</Button>}
                 </>}
                 {r.status==='active'&&<Button variant="destructive" size="sm" disabled={!!endingRound} onClick={()=>her(r.id)} className="gap-1.5"><Square className="h-3.5 w-3.5"/>{endingRound===r.id?'Ending…':'End Round'}</Button>}
                 {r.status==='completed'&&hnr&&<Button variant="default" size="sm" disabled={calculating[r.id]} onClick={()=>hca(r)} className="gap-1.5"><ArrowUp className="h-3.5 w-3.5"/>{calculating[r.id]?'Calculating…':'Calculate Advancement'}</Button>}
               </div>
             </div>
-            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              {r.round_number<ce.round_count&&<div className="flex items-center gap-2 text-sm"><Users className="h-4 w-4 text-text-tertiary"/><span className="text-text-secondary">Advance top:</span><Input type="number" className="w-20 h-8" min={1} value={r.advance_count??''} onChange={e=>supabase.from('rounds').update({advance_count:parseInt(e.target.value||'0')}).eq('id',r.id).then(()=>setAllRounds(p=>p.map(x=>x.id===r.id?{...x,advance_count:parseInt(e.target.value||'0')}:x)))}/><span className="text-xs text-text-tertiary">to round {r.round_number+1}</span></div>}
+            {/* Format + Advancement — only for pending rounds */}
+            {r.status==='pending'&&<div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              {/* Format */}
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-text-secondary">Format:</span>
+                <Select value={rf} onValueChange={v => updateRoundField(r.id, 'round_format', v)}>
+                  <SelectTrigger className="h-8 w-24 text-xs"><SelectValue/></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="average">Ao5</SelectItem>
+                    <SelectItem value="mean">Mo3</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* Advancement */}
+              {hnr&&<div className="flex items-center gap-2 text-sm">
+                <Users className="h-4 w-4 text-text-tertiary"/>
+                <span className="text-text-secondary">Advance:</span>
+                <Select value={advMode||'none'} onValueChange={v => {
+                  if (v === 'none') { updateRoundField(r.id, 'advancement_mode', null); updateRoundField(r.id, 'advancement_value', null); }
+                  else updateRoundField(r.id, 'advancement_mode', v);
+                }}>
+                  <SelectTrigger className="h-8 w-32 text-xs"><SelectValue placeholder="None"/></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="fixed">Fixed count</SelectItem>
+                    <SelectItem value="percentage">Percentage</SelectItem>
+                  </SelectContent>
+                </Select>
+                {advMode&&<Input type="number" className="w-16 h-8 text-xs" min={1} max={advMode==='percentage'?100:999} placeholder={advMode==='fixed'?'8':'60'} value={advVal??''} onChange={e => {
+                  const v = parseInt(e.target.value||'0');
+                  if (v > 0) { updateRoundField(r.id, 'advancement_value', v); updateRoundField(r.id, 'advancement_mode', advMode); }
+                }}/>}
+                {advMode==='percentage'&&<span className="text-xs text-text-tertiary">% of round {r.round_number}</span>}
+                {advMode==='fixed'&&<span className="text-xs text-text-tertiary">to round {r.round_number+1}</span>}
+              </div>}
+            </div>}
               {hs&&<div className="flex flex-wrap gap-1.5">{rs.map(s=><span key={s.id} className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-1 text-xs font-mono"><span className="font-bold text-cube-blue">{s.scramble_number}</span>{s.scramble}</span>)}</div>}
-            </div>
           </div>})}
         </CardContent>
       </Card>})}

@@ -1,7 +1,6 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { getEventByKey } from '@/lib/wca-events';
 
 interface SolveInput {
   solve_number: number;
@@ -56,10 +55,10 @@ export async function submitTimesAction(
     }
   }
 
-  // 5. Validate solves
-  const eventKey = round.competition_event.event_key;
-  const wcaEvent = getEventByKey(eventKey);
-  const solveCount = wcaEvent?.solveCount ?? 5;
+  // 5. Validate solves using per-round format
+  //    round_format overrides the event-level event_format
+  const roundFormat = (round.round_format || round.competition_event.event_format) as 'average' | 'mean';
+  const solveCount = roundFormat === 'mean' ? 3 : 5;
 
   if (solves.length === 0) return { success: false, error: 'Enter at least one time' };
 

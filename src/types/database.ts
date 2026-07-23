@@ -35,6 +35,9 @@ export interface Round {
   round_number: number;
   status: 'pending' | 'active' | 'completed';
   advance_count: number | null;
+  round_format: 'average' | 'mean';
+  advancement_mode: 'fixed' | 'percentage' | null;
+  advancement_value: number | null;
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
