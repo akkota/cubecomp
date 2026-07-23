@@ -2,110 +2,154 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Play, Square, RotateCcw, AlertTriangle, Ban } from 'lucide-react';
+import { RotateCcw, AlertTriangle, Ban, Check, Timer as TimerIcon } from 'lucide-react';
 
-type TimerState = 'idle' | 'arming' | 'ready' | 'running' | 'stopped';
+type TimerState = 'idle' | 'inspection' | 'armed' | 'running' | 'stopped';
 
 interface Props {
-  solveIndex: number;
-  solveLabel: string;
-  currentValue: string;
-  onTimeRecorded: (timeMs: number) => void;
-  onPenalty: (penalty: string) => void;
+  solveIndex: number;       // 0-based index of current solve
+  solveCount: number;        // total solves needed (3 or 5)
+  onTimeRecorded: (timeMs: number, penalty: string) => void;
 }
 
-export function CubeTimer({ solveIndex, solveLabel, currentValue, onTimeRecorded, onPenalty }: Props) {
+export function CubeTimer({ solveIndex, solveCount, onTimeRecorded }: Props) {
   const [state, setState] = useState<TimerState>('idle');
   const [time, setTime] = useState(0);
   const [inspection, setInspection] = useState(15);
+  const [penalty, setPenalty] = useState<string | null>(null);
   const [inspectionActive, setInspectionActive] = useState(false);
-  const [penalty, setPenalty] = useState<string>('');
 
-  const startRef = useRef(0);
+  const startTimeRef = useRef(0);
   const rafRef = useRef(0);
-  const inspectionRef = useRef(0);
+  const inspectionRafRef = useRef(0);
   const inspectionStartRef = useRef(0);
-  const spaceDownRef = useRef(false);
+  const holdStartRef = useRef(0);
   const stateRef = useRef<TimerState>('idle');
+  const armedRef = useRef(false);
 
-  // Keep ref in sync
   useEffect(() => { stateRef.current = state; }, [state]);
 
-  const reset = useCallback(() => {
+  const cleanup = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
-    cancelAnimationFrame(inspectionRef.current);
+    cancelAnimationFrame(inspectionRafRef.current);
+  }, []);
+
+  const reset = useCallback(() => {
+    cleanup();
     setState('idle');
     setTime(0);
     setInspection(15);
+    setPenalty(null);
     setInspectionActive(false);
-    setPenalty('');
-  }, []);
+    armedRef.current = false;
+  }, [cleanup]);
 
-  // Keyboard handling
+  const isLastSolve = solveIndex >= solveCount;
+
+  // ── Spacebar key handlers ──
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat) return;
+      if (e.code !== 'Space' || e.repeat || isLastSolve) return;
       e.preventDefault();
       const st = stateRef.current;
 
       if (st === 'idle') {
-        // Start arming
-        setState('arming');
-        startRef.current = Date.now();
+        // Start inspection
+        setState('inspection');
+        setInspection(15);
+        setInspectionActive(true);
+        inspectionStartRef.current = Date.now();
+        holdStartRef.current = 0;
+        armedRef.current = false;
+      } else if (st === 'inspection') {
+        // Start holding — start tracking hold duration
+        holdStartRef.current = Date.now();
       } else if (st === 'running') {
-        // Stop
-        const elapsed = Date.now() - startRef.current;
+        // Stop timer
+        const elapsed = Date.now() - startTimeRef.current;
         setTime(elapsed);
         setState('stopped');
-        onTimeRecorded(elapsed);
+        cleanup();
       } else if (st === 'stopped') {
-        // Reset
-        reset();
-        onTimeRecorded(0);
+        // Accept the time, go to next
+        handleAccept();
       }
     };
 
     const onUp = (e: KeyboardEvent) => {
-      if (e.code !== 'Space') return;
+      if (e.code !== 'Space' || isLastSolve) return;
       e.preventDefault();
       const st = stateRef.current;
 
-      if (st === 'arming') {
-        const held = Date.now() - startRef.current;
-        if (held >= 300) {
-          // Armed long enough → ready state with inspection
-          setInspectionActive(true);
-          setInspection(15);
-          inspectionStartRef.current = Date.now();
-          setState('ready');
+      if (st === 'inspection' && holdStartRef.current > 0) {
+        const held = Date.now() - holdStartRef.current;
+        if (held >= 500) {
+          // Held long enough — start solving timer
+          setInspectionActive(false);
+          startTimeRef.current = Date.now();
+          setState('running');
+          armedRef.current = false;
+          holdStartRef.current = 0;
         } else {
-          // Too short, go back to idle
-          setState('idle');
+          // Too short, cancel the arm
+          holdStartRef.current = 0;
         }
-      } else if (st === 'ready' && inspectionActive) {
-        // Start solving after inspection
-        setInspectionActive(false);
-        startRef.current = Date.now();
-        setState('running');
-      } else if (st === 'ready' && !inspectionActive) {
-        // Shouldn't happen, but reset
-        setState('idle');
       }
     };
 
-    window.addEventListener('keydown', onDown);
-    window.addEventListener('keyup', onUp);
+    window.addEventListener('keydown', onDown, { passive: false });
+    window.addEventListener('keyup', onUp, { passive: false });
     return () => {
       window.removeEventListener('keydown', onDown);
       window.removeEventListener('keyup', onUp);
     };
-  }, [reset, onTimeRecorded]);
+  }, [isLastSolve, cleanup]);
 
-  // Timer animation loop
+  // ── Mouse/touch handlers ──
+  const handlePointerDown = useCallback(() => {
+    if (isLastSolve) return;
+    const st = stateRef.current;
+    if (st === 'idle') {
+      setState('inspection');
+      setInspection(15);
+      setInspectionActive(true);
+      inspectionStartRef.current = Date.now();
+      holdStartRef.current = 0;
+      armedRef.current = false;
+    } else if (st === 'inspection') {
+      holdStartRef.current = Date.now();
+    } else if (st === 'running') {
+      const elapsed = Date.now() - startTimeRef.current;
+      setTime(elapsed);
+      setState('stopped');
+      cleanup();
+    } else if (st === 'stopped') {
+      handleAccept();
+    }
+  }, [isLastSolve, cleanup]);
+
+  const handlePointerUp = useCallback(() => {
+    if (isLastSolve) return;
+    const st = stateRef.current;
+    if (st === 'inspection' && holdStartRef.current > 0) {
+      const held = Date.now() - holdStartRef.current;
+      if (held >= 500) {
+        setInspectionActive(false);
+        startTimeRef.current = Date.now();
+        setState('running');
+        armedRef.current = false;
+        holdStartRef.current = 0;
+      } else {
+        holdStartRef.current = 0;
+      }
+    }
+  }, [isLastSolve]);
+
+  // ── Timer animation loop ──
   useEffect(() => {
     if (state === 'running') {
       const tick = () => {
-        setTime(Date.now() - startRef.current);
+        setTime(Date.now() - startTimeRef.current);
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
@@ -113,64 +157,48 @@ export function CubeTimer({ solveIndex, solveLabel, currentValue, onTimeRecorded
     }
   }, [state]);
 
-  // Inspection countdown
+  // ── Inspection countdown ──
   useEffect(() => {
-    if (inspectionActive && state === 'ready') {
+    if (inspectionActive && state === 'inspection') {
       const tick = () => {
         const elapsed = Date.now() - inspectionStartRef.current;
         const remaining = Math.max(0, 15 - elapsed / 1000);
         setInspection(remaining);
         if (remaining <= 0) {
+          // Inspection expired — auto-start solving timer
           setInspectionActive(false);
-          // Auto-start if inspection expires
-          startRef.current = Date.now();
+          startTimeRef.current = Date.now();
           setState('running');
           return;
         }
-        inspectionRef.current = requestAnimationFrame(tick);
+        inspectionRafRef.current = requestAnimationFrame(tick);
       };
-      inspectionRef.current = requestAnimationFrame(tick);
-      return () => cancelAnimationFrame(inspectionRef.current);
+      inspectionRafRef.current = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(inspectionRafRef.current);
     }
   }, [inspectionActive, state]);
 
-  // Mouse/touch interaction for mobile
-  const handlePointerDown = () => {
-    const st = stateRef.current;
-    if (st === 'idle') {
-      setState('arming');
-      startRef.current = Date.now();
-    } else if (st === 'running') {
-      const elapsed = Date.now() - startRef.current;
-      setTime(elapsed);
-      setState('stopped');
-      onTimeRecorded(elapsed);
-    } else if (st === 'stopped') {
-      reset();
-      onTimeRecorded(0);
+  // ── Penalty handlers ──
+  const applyPenalty = (p: string) => {
+    if (p === '+2') {
+      setTime(prev => prev + 2000);
+      setPenalty('+2');
+    } else if (p === 'DNF') {
+      setPenalty('DNF');
     }
   };
 
-  const handlePointerUp = () => {
-    const st = stateRef.current;
-    if (st === 'arming') {
-      const held = Date.now() - startRef.current;
-      if (held >= 300) {
-        setInspectionActive(true);
-        setInspection(15);
-        inspectionStartRef.current = Date.now();
-        setState('ready');
-      } else {
-        setState('idle');
-      }
-    } else if (st === 'ready' && inspectionActive) {
-      setInspectionActive(false);
-      startRef.current = Date.now();
-      setState('running');
-    }
+  const handleAccept = () => {
+    if (isLastSolve) return;
+    const effectiveMs = penalty === 'DNF' ? 0 : time;
+    const penaltyStr = penalty || 'none';
+    onTimeRecorded(effectiveMs, penaltyStr);
+    reset();
   };
 
+  // ── Display formatting ──
   const formatDisplay = (ms: number) => {
+    if (penalty === 'DNF') return 'DNF';
     const seconds = ms / 1000;
     if (seconds < 10) return seconds.toFixed(2);
     if (seconds < 60) return seconds.toFixed(2);
@@ -180,95 +208,142 @@ export function CubeTimer({ solveIndex, solveLabel, currentValue, onTimeRecorded
   };
 
   const getTimerColor = () => {
-    if (state === 'arming') return 'text-cube-yellow';
-    if (state === 'ready') {
+    if (state === 'inspection') {
       if (inspection <= 5) return 'text-destructive';
       if (inspection <= 10) return 'text-cube-orange';
       return 'text-cube-green';
     }
+    if (state === 'armed') return 'text-cube-green';
     if (state === 'running') return 'text-cube-blue';
-    if (state === 'stopped') return 'text-foreground';
+    if (state === 'stopped') return penalty === 'DNF' ? 'text-destructive' : 'text-foreground';
     return 'text-text-tertiary';
+  };
+
+  const getTimerBorder = () => {
+    if (state === 'inspection') return 'border-cube-green/30';
+    if (state === 'running') return 'border-cube-blue/30';
+    if (state === 'stopped') return 'border-border/50';
+    return 'border-border/20';
   };
 
   const getTimerBg = () => {
     if (state === 'stopped') return 'bg-surface-hover/50';
-    if (state === 'ready') return 'bg-cube-green/5';
-    return 'bg-surface-hover/10';
+    if (state === 'inspection') return 'bg-cube-green/5';
+    return 'bg-surface-hover/5';
   };
 
-  const handlePenaltySet = (p: string) => {
-    setPenalty(p);
-    onPenalty(p);
-  };
+  if (isLastSolve) {
+    return (
+      <div className="rounded-xl border border-dashed border-border/30 bg-surface/20 p-6 text-center">
+        <TimerIcon className="mx-auto mb-2 h-6 w-6 text-text-tertiary/40" />
+        <p className="text-sm text-text-secondary">All {solveCount} solves recorded. Submit your times below.</p>
+      </div>
+    );
+  }
+
+  const showInspection = state === 'inspection' || state === 'armed';
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 select-none">
       {/* Timer display */}
       <div
-        className={`relative cursor-pointer select-none rounded-xl border-2 transition-all duration-200 ${getTimerBg()} ${
-          state === 'stopped' ? 'border-border/50' :
-          state === 'ready' ? 'border-cube-green/30' :
-          state === 'running' ? 'border-cube-blue/30' :
-          'border-border/20'
-        }`}
+        className={`relative cursor-pointer rounded-xl border-2 transition-all duration-200 ${getTimerBg()} ${getTimerBorder()}`}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
-        onPointerLeave={() => { if (stateRef.current === 'arming') setState('idle'); }}
+        onPointerLeave={() => {
+          if (stateRef.current === 'inspection' && holdStartRef.current > 0) {
+            holdStartRef.current = 0;
+          }
+        }}
       >
-        {inspectionActive && (
-          <div className="absolute top-3 left-0 right-0 text-center">
-            <span className="text-xs font-medium uppercase tracking-wider text-text-tertiary/50">Inspection</span>
+        {/* Inspection countdown */}
+        {showInspection && (
+          <div className="absolute top-3 left-0 right-0 text-center flex items-center justify-center gap-2">
+            <span className="text-xs font-medium uppercase tracking-wider text-text-tertiary/50">Inspect</span>
+            {inspection <= 5 && (
+              <span className="text-xs text-destructive font-medium">— release soon!</span>
+            )}
           </div>
         )}
+
         <div className={`flex flex-col items-center justify-center py-8 sm:py-12 ${getTimerColor()}`}>
-          {inspectionActive ? (
-            <span className={`font-mono text-6xl sm:text-8xl font-bold tabular-nums tracking-tighter ${inspection <= 5 ? 'animate-pulse' : ''}`}>
-              {Math.ceil(inspection)}
-            </span>
+          {showInspection ? (
+            <div className="text-center">
+              <span className={`font-mono text-6xl sm:text-8xl font-bold tabular-nums tracking-tighter ${inspection <= 5 ? 'animate-pulse' : ''}`}>
+                {Math.ceil(inspection)}
+              </span>
+              <div className="mt-2 text-xs text-text-tertiary/50">
+                {holdStartRef.current > 0
+                  ? 'Hold to arm…'
+                  : 'Hold spacebar/click to arm the timer'}
+              </div>
+            </div>
           ) : (
-            <span className={`font-mono text-6xl sm:text-8xl font-bold tabular-nums tracking-tighter ${state === 'running' ? 'animate-none' : ''}`}>
-              {state === 'idle' ? `${solveLabel}` :
-               state === 'arming' ? '...' :
-               formatDisplay(time)}
+            <span className="font-mono text-6xl sm:text-8xl font-bold tabular-nums tracking-tighter">
+              {state === 'idle' ? `Solve ${solveIndex + 1}/${solveCount}` :
+               state === 'running' ? formatDisplay(time) :
+               state === 'stopped' ? formatDisplay(time) :
+               '0.00'}
             </span>
           )}
         </div>
-        <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center gap-2">
-          {state === 'idle' && (
-            <span className="text-xs text-text-tertiary/40">Hold spacebar or tap to arm</span>
-          )}
-          {state === 'stopped' && (
-            <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" onClick={reset} className="h-7 text-xs gap-1">
-                <RotateCcw className="h-3 w-3" /> Retry
-              </Button>
+
+        {/* Stopped state controls */}
+        {state === 'stopped' && (
+          <div className="absolute bottom-2 left-0 right-0 flex items-center justify-center gap-2 flex-wrap">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { reset(); }}
+              className="h-7 text-xs gap-1"
+            >
+              <RotateCcw className="h-3 w-3" /> Retry
+            </Button>
+
+            {penalty !== 'DNF' && (
               <Button
                 variant={penalty === '+2' ? 'default' : 'ghost'}
                 size="sm"
-                onClick={() => handlePenaltySet(penalty === '+2' ? '' : '+2')}
+                onClick={() => applyPenalty(penalty === '+2' ? '+2' : '+2')}
                 className={`h-7 text-xs gap-1 ${penalty === '+2' ? 'bg-cube-orange hover:bg-cube-orange/90' : 'text-cube-orange'}`}
               >
                 <AlertTriangle className="h-3 w-3" /> +2
               </Button>
+            )}
+
+            {penalty !== '+2' && (
               <Button
                 variant={penalty === 'DNF' ? 'default' : 'ghost'}
                 size="sm"
-                onClick={() => handlePenaltySet(penalty === 'DNF' ? '' : 'DNF')}
+                onClick={() => applyPenalty('DNF')}
                 className={`h-7 text-xs gap-1 ${penalty === 'DNF' ? 'bg-destructive hover:bg-destructive/90' : 'text-destructive'}`}
               >
                 <Ban className="h-3 w-3" /> DNF
               </Button>
-            </div>
-          )}
-        </div>
+            )}
+
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleAccept}
+              className="h-7 text-xs gap-1"
+            >
+              <Check className="h-3 w-3" /> Accept
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* Solve info */}
+      {/* Instructions */}
       <div className="flex items-center justify-between text-xs text-text-secondary px-1">
-        <span>Spacebar: hold to arm, release for inspection, tap to stop</span>
-        {state === 'stopped' && (
-          <span className="font-mono text-text-primary">{formatDisplay(time)}</span>
+        <span>
+          {state === 'idle' && 'Tap space or click → inspection → hold 0.5s → release to solve → tap to stop'}
+          {state === 'inspection' && (holdStartRef.current > 0 ? 'Hold to arm…' : 'Hold spacebar to arm the timer')}
+          {state === 'running' && 'Tap space or click to stop'}
+          {state === 'stopped' && 'Apply +2/DNF, then Accept or Retry'}
+        </span>
+        {penalty && state === 'stopped' && (
+          <span className="font-semibold text-cube-orange">{penalty === 'DNF' ? 'DNF' : `+${((time/1000) - ((time-2000)/1000)).toFixed(2)}`}</span>
         )}
       </div>
     </div>

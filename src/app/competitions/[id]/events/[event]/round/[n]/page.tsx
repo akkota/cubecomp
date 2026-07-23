@@ -13,7 +13,7 @@ import { RoundLeaderboard } from '@/components/competitions/leaderboard';
 import { CubeTimer } from '@/components/competitions/cube-timer';
 import { submitTimesAction } from '@/actions/submitTimes';
 import { toast } from 'sonner';
-import { Clock, Lock, Send, AlertTriangle, CuboidIcon as CubeIcon, Trophy, Timer, ShuffleIcon, Video, CheckCircle2 } from 'lucide-react';
+import { Clock, Lock, Send, AlertTriangle, CuboidIcon as CubeIcon, Trophy, Timer, ShuffleIcon, Video, CheckCircle2, TimerOff } from 'lucide-react';
 
 type ScrambleEntry = { id: string; scramble_number: number; scramble: string };
 type AccessState = 'loading' | 'granted' | 'blocked_registration' | 'blocked_qualification' | 'blocked_round_locked';
@@ -31,6 +31,7 @@ export default function RoundPage() {
   const [accessState, setAccessState] = useState<AccessState>('loading');
   const [videoUrl, setVideoUrl] = useState('');
   const [videoSubmitted, setVideoSubmitted] = useState(false);
+  const [useTimer, setUseTimer] = useState(true);
   const submittingRef = useRef(false);
   const supabase = createClient();
 
@@ -96,6 +97,18 @@ export default function RoundPage() {
   // Per-round format: round_format overrides event-level format
   const roundFormat = ((round as any)?.round_format || compEvent?.event_format) as 'average' | 'mean';
   const solveCount = roundFormat === 'mean' ? 3 : 5;
+
+  // Timer auto-fills the next solve
+  const handleTimerResult = (timeMs: number, penalty: string) => {
+    const solveNum = timesFilledCount + 1;
+    if (solveNum > solveCount) return;
+    const timeStr = timeMs > 0 ? (timeMs / 1000).toFixed(2) : '';
+    setTimes(p => ({ ...p, [solveNum]: timeStr }));
+    setPenalties(p => ({ ...p, [solveNum]: penalty || 'none' }));
+    toast.success(`${penalty === 'DNF' ? 'DNF' : timeStr}s for solve ${solveNum}`);
+  };
+
+  const timesFilledCount = Object.keys(times).length;
 
   const handleSubmit = async () => {
     if (submittingRef.current) return;
@@ -190,36 +203,43 @@ export default function RoundPage() {
         </Card>
       )}
 
-      {/* Stackmat Timer */}
+      {/* Mode toggle: Timer vs Manual */}
       {accessState==='granted'&&round?.status==='active'&&(
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-border/30 p-0.5 bg-surface-hover/30">
+            <button
+              onClick={() => setUseTimer(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                useTimer ? 'bg-surface shadow-sm text-foreground' : 'text-text-secondary hover:text-foreground'
+              }`}
+            >
+              <Timer className="h-3.5 w-3.5" /> Timer
+            </button>
+            <button
+              onClick={() => setUseTimer(false)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                !useTimer ? 'bg-surface shadow-sm text-foreground' : 'text-text-secondary hover:text-foreground'
+              }`}
+            >
+              <TimerOff className="h-3.5 w-3.5" /> Manual Entry
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Stackmat Timer */}
+      {accessState==='granted'&&round?.status==='active'&&useTimer&&(
         <CubeTimer
-          solveIndex={Object.keys(times).length}
-          solveLabel={`Solve ${Object.keys(times).length + 1}/${solveCount}`}
-          currentValue={''}
-          onTimeRecorded={(timeMs) => {
-            if (timeMs === 0) return; // reset, don't auto-fill
-            const nextSolve = Object.keys(times).length + 1;
-            if (nextSolve > solveCount) {
-              toast.warning(`All ${solveCount} solves accounted for — submit below`);
-              return;
-            }
-            const timeStr = (timeMs / 1000).toFixed(2);
-            setTimes(p => ({ ...p, [nextSolve]: timeStr }));
-            toast.success(`Solve ${nextSolve}: ${timeStr}`);
-          }}
-          onPenalty={(penalty) => {
-            const lastSolve = Math.max(...Object.keys(times).map(Number), 0);
-            if (lastSolve > 0) {
-              setPenalties(p => ({ ...p, [lastSolve]: penalty || 'none' }));
-            }
-          }}
+          solveIndex={timesFilledCount}
+          solveCount={solveCount}
+          onTimeRecorded={handleTimerResult}
         />
       )}
 
       {/* Time Entry */}
       {accessState==='granted'&&round?.status==='active'&&(
         <Card className="border-border/30">
-          <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Timer className="h-4 w-4 text-cube-green"/>Enter Times</CardTitle></CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Timer className="h-4 w-4 text-cube-green"/>{useTimer ? 'Review & Submit Times' : 'Enter Times'}</CardTitle></CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2">
               {Array.from({length:solveCount},(_,i)=>i+1).map(sn=><div key={sn} className="flex items-end gap-2"><div className="flex-1 space-y-1"><label className="text-xs font-medium text-text-secondary">Solve {sn}</label><Input type="text" placeholder="12.34 or DNF" value={times[sn]??''} onChange={e=>setTimes(p=>({...p,[sn]:e.target.value}))} className="h-10 font-mono"/></div><div className="w-20"><Select value={penalties[sn]??'none'} onValueChange={v=>setPenalties(p=>({...p,[sn]:v??'none'}))}><SelectTrigger className="h-10"><SelectValue placeholder="—"/></SelectTrigger><SelectContent><SelectItem value="none">—</SelectItem><SelectItem value="+2">+2</SelectItem><SelectItem value="DNF">DNF</SelectItem></SelectContent></Select></div></div>)}
