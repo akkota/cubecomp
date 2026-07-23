@@ -176,7 +176,10 @@ export default function RoundPage() {
             {round && <Badge variant={round.status==='active'?'destructive':round.status==='completed'?'secondary':'outline'}>{round.status}</Badge>}
           </p>
         </div>
-        {accessState==='granted'&&round?.status==='active'&&<Button onClick={handleSubmit} disabled={submitting} size="sm" className="gap-2"><Send className="h-4 w-4"/>{submitting?'Saving…':'Submit Times'}</Button>}
+        {accessState==='granted'&&round?.status==='active'&&!alreadySubmitted&&<Button onClick={handleSubmit} disabled={submitting} size="sm" className="gap-2"><Send className="h-4 w-4"/>{submitting?'Saving…':'Submit Times'}</Button>}
+        {accessState==='granted'&&round?.status==='active'&&alreadySubmitted&&(
+          <Badge variant="secondary" className="gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-cube-green"/> Submitted</Badge>
+        )}
       </div>
 
       {/* Blocked states */}
