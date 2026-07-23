@@ -48,6 +48,7 @@ export default function RoundPage() {
     setCompetition(comp);
     // Access check
     const isSpectator = comp?.allow_spectators === true;
+    let competitorId: string | null = null;
     if (!user) {
       // Not logged in: only view if spectator mode is on and round is active/completed
       if (isSpectator && r.status !== 'pending') { setAccessState('granted'); }
@@ -67,15 +68,23 @@ export default function RoundPage() {
         const { data: p } = await supabase.from('round_participants').select('id').eq('round_id', r.id).eq('competitor_id', competitor.id).maybeSingle();
         setAccessState(p ? 'granted' : 'blocked_qualification');
       } else { setAccessState('granted'); }
-      // Load existing solves
-      if (competitor) {
-        const { data: sol } = await supabase.from('solves').select('*').eq('round_id', r.id).eq('competitor_id', competitor.id).order('solve_number');
-        if (sol && sol.length > 0) {
-          setAlreadySubmitted(true);
-          const tm: Record<number,string>={}; const pm: Record<number,string>={};
-          for (const s of sol) { tm[s.solve_number] = s.time_ms!==null ? (s.time_ms/1000).toFixed(2):''; pm[s.solve_number]=s.penalty==='none'?'':s.penalty; }
-          setTimes(tm); setPenalties(pm);
-        }
+      if (competitor) competitorId = competitor.id;
+    }
+
+    // Also fetch competitor for owner (who may also be registered)
+    if (!competitorId && user && user.id === comp?.created_by) {
+      const { data: ownerComp } = await supabase.from('competitors').select('id').eq('competition_id', params.id).eq('user_id', user.id).maybeSingle();
+      if (ownerComp) competitorId = ownerComp.id;
+    }
+
+    // Load existing solves (for ALL users including owner)
+    if (competitorId) {
+      const { data: sol } = await supabase.from('solves').select('*').eq('round_id', r.id).eq('competitor_id', competitorId).order('solve_number');
+      if (sol && sol.length > 0) {
+        setAlreadySubmitted(true);
+        const tm: Record<number,string>={}; const pm: Record<number,string>={};
+        for (const s of sol) { tm[s.solve_number] = s.time_ms!==null ? (s.time_ms/1000).toFixed(2):''; pm[s.solve_number]=s.penalty==='none'?'':s.penalty; }
+        setTimes(tm); setPenalties(pm);
       }
     }
     const { data: sc } = await supabase.from('scrambles').select('*').eq('round_id', r.id).order('scramble_number');
