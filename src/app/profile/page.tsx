@@ -268,29 +268,33 @@ export default function ProfilePage() {
             </Card>
           ) : (
             <Card className="border-border/30">
-              <CardContent className="p-0">
-                <div className="divide-y divide-border/30">
+              <CardContent className="p-3 sm:p-4">
+                <ul className="flex flex-col gap-2">
                   {history.slice(0, 50).map(s => (
-                    <div key={s.id} className="flex items-center justify-between px-4 py-3 hover:bg-surface-hover/30 transition-colors">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">
-                          <span>{s.event_icon}</span> {s.event_name} — R{s.round_number} S{s.solve_number}
+                    <li
+                      key={s.id}
+                      className="flex items-center justify-between gap-4 rounded-xl border border-border/35 bg-surface-hover/10 px-4 py-3.5 transition-colors hover:border-border/55 hover:bg-surface-hover/30 sm:px-5"
+                    >
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <p className="truncate text-sm font-semibold tracking-tight">
+                          <span>{s.event_icon}</span> {s.event_name}
+                          <span className="font-medium text-text-secondary"> — R{s.round_number} S{s.solve_number}</span>
                         </p>
-                        <p className="text-xs text-text-secondary">
+                        <p className="truncate text-xs text-text-tertiary">
                           {s.competition_name} · {new Date(s.submitted_at).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="shrink-0 text-right">
-                        <p className="font-mono text-sm font-bold">
+                        <p className="font-mono text-sm font-bold tabular-nums">
                           {s.time_ms !== null ? formatTime(s.time_ms) : <span className="text-destructive">DNF</span>}
                         </p>
                         {s.penalty !== 'none' && s.penalty !== 'DNF' && (
                           <p className="text-xs text-cube-orange">{s.penalty}</p>
                         )}
                       </div>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </CardContent>
             </Card>
           )}

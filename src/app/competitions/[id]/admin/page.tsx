@@ -122,10 +122,35 @@ export default function CompetitionAdminPage() {
   if(error){toast.error(error.message)}else{toast.success('Round started!');const up = allRounds.map(r=>r.id===rid?{...r,status:'active',started_at:new Date().toISOString()}:r);setAllRounds(up);syncCompStatus(up)}
   setStartingRound(null);startRef.current=null};
 
-  const her = async (rid:string)=>{if(endRef.current)return;endRef.current=rid;setEndingRound(rid);
-  const{error}=await supabase.from('rounds').update({status:'completed',ended_at:new Date().toISOString()}).eq('id',rid);
-  if(error){toast.error(error.message)}else{toast.success('Round ended!');const up = allRounds.map(r=>r.id===rid?{...r,status:'completed',ended_at:new Date().toISOString()}:r);setAllRounds(up);syncCompStatus(up)}
-  setEndingRound(null);endRef.current=null};
+  const hasAdvancementRule = (r: { advancement_mode?: string | null; advancement_value?: number | null; advance_count?: number | null }) => {
+    const mode = r.advancement_mode || (r.advance_count ? 'fixed' : null);
+    const value = r.advancement_value ?? r.advance_count ?? null;
+    if (!mode || value === null || value === undefined || Number(value) < 1) return false;
+    if (mode === 'percentage' && Number(value) > 100) return false;
+    return true;
+  };
+
+  const her = async (rid: string, hasNextRound: boolean) => {
+    if (endRef.current) return;
+    const round = allRounds.find(r => r.id === rid);
+    if (hasNextRound && (!round || !hasAdvancementRule(round))) {
+      toast.error('Set a qualification method (fixed count or percentage) and value before ending this round.');
+      return;
+    }
+    endRef.current = rid;
+    setEndingRound(rid);
+    const { error } = await supabase.from('rounds').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', rid);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success('Round ended!');
+      const up = allRounds.map(r => r.id === rid ? { ...r, status: 'completed', ended_at: new Date().toISOString() } : r);
+      setAllRounds(up);
+      syncCompStatus(up);
+    }
+    setEndingRound(null);
+    endRef.current = null;
+  };
 
   const hca = async (r:any)=>{setCalculating(p=>({...p,[r.id]:true}));
   try{const res=await calculateAdvancementAction(r.id);
@@ -221,6 +246,8 @@ export default function CompetitionAdminPage() {
               const rSolveCount = rf === 'mean' ? 3 : 5;
               const advMode = r.advancement_mode || (r.advance_count ? 'fixed' : null);
               const advVal = r.advancement_value ?? r.advance_count ?? null;
+              const advancementReady = hasAdvancementRule(r);
+              const canEndRound = !hnr || advancementReady;
               return<div key={r.id} className="px-4 py-4 sm:px-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3"><h3 className="font-semibold">Round {r.round_number}</h3><Badge variant={V[r.status]??'outline'}>{r.status}</Badge></div>
@@ -231,27 +258,86 @@ export default function CompetitionAdminPage() {
                       )}
                       {(hs||competition.generate_scrambles===false)&&<Button variant="default" size="sm" disabled={!!startingRound} onClick={()=>hsr(r.id)} className="gap-1.5"><Play className="h-3.5 w-3.5"/>{startingRound===r.id?'Starting…':'Start'}</Button>}
                     </>}
-                    {r.status==='active'&&<Button variant="destructive" size="sm" disabled={!!endingRound} onClick={()=>her(r.id)} className="gap-1.5"><Square className="h-3.5 w-3.5"/>{endingRound===r.id?'Ending…':'End Round'}</Button>}
+                    {r.status==='active'&&(
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={!!endingRound || !canEndRound}
+                        onClick={()=>her(r.id, hnr)}
+                        className="gap-1.5"
+                        title={!canEndRound ? 'Set a qualification method before ending this round' : undefined}
+                      >
+                        <Square className="h-3.5 w-3.5"/>{endingRound===r.id?'Ending…':'End Round'}
+                      </Button>
+                    )}
                     {r.status==='completed'&&hnr&&<Button variant="default" size="sm" disabled={calculating[r.id]} onClick={()=>hca(r)} className="gap-1.5"><ArrowUp className="h-3.5 w-3.5"/>{calculating[r.id]?'Calculating…':'Calculate Advancement'}</Button>}
                   </div>
                 </div>
-                {r.status==='pending'&&<div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2 text-sm"><span className="text-text-secondary">Format:</span>
-                  <Select value={rf} onValueChange={v => updateRoundField(r.id, 'round_format', v)}>
-                    <SelectTrigger className="h-8 w-24 text-xs"><SelectValue/></SelectTrigger>
-                    <SelectContent><SelectItem value="average">Ao5</SelectItem><SelectItem value="mean">Mo3</SelectItem></SelectContent>
-                  </Select>
-                </div>{hnr&&<div className="flex items-center gap-2 text-sm">
-                  <Users className="h-4 w-4 text-text-tertiary"/><span className="text-text-secondary">Advance:</span>
-                  <Select value={advMode||'none'} onValueChange={v => {
-                    if (v === 'none') { updateRoundField(r.id, 'advancement_mode', null); updateRoundField(r.id, 'advancement_value', null); }
-                    else updateRoundField(r.id, 'advancement_mode', v);
-                  }}><SelectTrigger className="h-8 w-32 text-xs"><SelectValue placeholder="None"/></SelectTrigger>
-                  <SelectContent><SelectItem value="none">None</SelectItem><SelectItem value="fixed">Fixed count</SelectItem><SelectItem value="percentage">Percentage</SelectItem></SelectContent>
-                  </Select>
-                  {advMode&&<Input type="number" className="w-16 h-8 text-xs" min={1} max={advMode==='percentage'?100:999} placeholder={advMode==='fixed'?'8':'60'} value={advVal??''} onChange={e => { const v = parseInt(e.target.value||'0'); if (v > 0) { updateRoundField(r.id, 'advancement_value', v); updateRoundField(r.id, 'advancement_mode', advMode); }}}/>}
-                  {advMode==='fixed'&&<span className="text-xs text-text-tertiary">to round {r.round_number+1}</span>}
-                </div>}</div>}
-                {hs&&<div className="flex flex-wrap gap-1.5">{rs.map(s=><span key={s.id} className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-1 text-xs font-mono"><span className="font-bold text-cube-blue">{s.scramble_number}</span>{s.scramble}</span>)}</div>}
+                {r.status==='pending'&&(
+                  <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-text-secondary">Format:</span>
+                      <Select value={rf} onValueChange={v => updateRoundField(r.id, 'round_format', v)}>
+                        <SelectTrigger className="h-8 w-24 text-xs"><SelectValue/></SelectTrigger>
+                        <SelectContent><SelectItem value="average">Ao5</SelectItem><SelectItem value="mean">Mo3</SelectItem></SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+                {hnr && (r.status === 'pending' || r.status === 'active') && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <Users className="h-4 w-4 text-text-tertiary"/>
+                      <span className="text-text-secondary">Qualification:</span>
+                      <Select
+                        value={advMode || ''}
+                        onValueChange={v => {
+                          if (!v) {
+                            updateRoundField(r.id, 'advancement_mode', null);
+                            updateRoundField(r.id, 'advancement_value', null);
+                            return;
+                          }
+                          updateRoundField(r.id, 'advancement_mode', v);
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-36 text-xs">
+                          <SelectValue placeholder="Required" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="fixed">Fixed count</SelectItem>
+                          <SelectItem value="percentage">Percentage</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {advMode && (
+                        <Input
+                          type="number"
+                          className="w-16 h-8 text-xs"
+                          min={1}
+                          max={advMode==='percentage'?100:999}
+                          placeholder={advMode==='fixed'?'8':'60'}
+                          value={advVal??''}
+                          onChange={e => {
+                            const v = parseInt(e.target.value||'0');
+                            if (v > 0) {
+                              updateRoundField(r.id, 'advancement_value', v);
+                              updateRoundField(r.id, 'advancement_mode', advMode);
+                            } else {
+                              updateRoundField(r.id, 'advancement_value', null);
+                            }
+                          }}
+                        />
+                      )}
+                      {advMode==='fixed'&&<span className="text-xs text-text-tertiary">advance to round {r.round_number+1}</span>}
+                      {advMode==='percentage'&&<span className="text-xs text-text-tertiary">% advance to round {r.round_number+1}</span>}
+                    </div>
+                    {r.status === 'active' && !advancementReady && (
+                      <p className="text-xs text-cube-orange">
+                        Choose a qualification method and value before ending this round.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {hs&&<div className="mt-3 flex flex-wrap gap-1.5">{rs.map(s=><span key={s.id} className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-1 text-xs font-mono"><span className="font-bold text-cube-blue">{s.scramble_number}</span>{s.scramble}</span>)}</div>}
               </div>})}
             </CardContent>
           </Card>})}
@@ -268,26 +354,26 @@ export default function CompetitionAdminPage() {
           <CardContent className="space-y-4">
             {/* Current admins */}
             {admins.length > 0 && (
-              <div className="divide-y divide-border/20 rounded-lg border border-border/30">
+              <ul className="flex flex-col gap-2">
                 {admins.map(a => (
-                  <div key={a.id} className="flex items-center justify-between px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-cube-green/10">
+                  <li key={a.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/35 bg-surface-hover/10 px-4 py-3.5 sm:px-5">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cube-green/10">
                         <UserCheck className="h-4 w-4 text-cube-green" />
                       </div>
-                      <div>
-                        <p className="text-sm font-medium">{a.user?.display_name || a.user?.username || a.user?.email}</p>
-                        <p className="text-xs text-text-secondary">{a.user?.email}</p>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold tracking-tight">{a.user?.display_name || a.user?.username || a.user?.email}</p>
+                        <p className="truncate text-xs text-text-tertiary">{a.user?.email}</p>
                       </div>
                     </div>
                     {isOwner && (
-                      <Button variant="ghost" size="sm" onClick={() => removeAdmin(a.id)} className="text-destructive/70 hover:text-destructive">
+                      <Button variant="ghost" size="sm" onClick={() => removeAdmin(a.id)} className="cursor-pointer text-destructive/70 hover:bg-destructive/10 hover:text-destructive">
                         <UserX className="h-4 w-4" />
                       </Button>
                     )}
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
 
             {/* Add admin — only creator */}
@@ -297,16 +383,16 @@ export default function CompetitionAdminPage() {
                 <Input type="text" placeholder="Search by username…" value={adminSearch} onChange={e => searchUsers(e.target.value)} className="h-10" />
                 {searchingAdmin && <p className="text-xs text-text-secondary">Searching…</p>}
                 {adminResults.length > 0 && (
-                  <div className="divide-y divide-border/20 rounded-lg border border-border/30">
+                  <ul className="flex flex-col gap-2">
                     {adminResults.filter(r => r.id !== competition.created_by).map(r => (
-                      <div key={r.id} className="flex items-center justify-between px-4 py-2.5">
-                        <span className="text-sm">{r.display_name || r.username}</span>
-                        <Button variant="outline" size="sm" onClick={() => addAdmin(r.id)} disabled={addingAdmin} className="gap-1">
+                      <li key={r.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/35 bg-surface-hover/10 px-4 py-3 sm:px-5">
+                        <span className="truncate text-sm font-medium">{r.display_name || r.username}</span>
+                        <Button variant="outline" size="sm" onClick={() => addAdmin(r.id)} disabled={addingAdmin} className="cursor-pointer gap-1">
                           <UserPlus className="h-3.5 w-3.5" /> Add
                         </Button>
-                      </div>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 )}
                 {adminSearch.length >= 2 && adminResults.length === 0 && !searchingAdmin && (
                   <p className="text-xs text-text-secondary">No matching users found.</p>

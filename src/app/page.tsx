@@ -28,6 +28,7 @@ export default function HomePage() {
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState('upcoming');
   const supabase = createClient();
 
   useEffect(() => {
@@ -74,6 +75,7 @@ export default function HomePage() {
       }));
 
       setCompetitions(enriched);
+      setActiveTab(enriched.some(c => c.displayStatus === 'ongoing') ? 'ongoing' : 'upcoming');
       setLoading(false);
     };
     fetchAll();
@@ -118,7 +120,9 @@ export default function HomePage() {
         </div>
 
         {/* Tab sections */}
-        <Tabs defaultValue={ongoing.length > 0 ? 'ongoing' : 'upcoming'}>
+        <Tabs value={activeTab} onValueChange={(value) => {
+          if (typeof value === 'string') setActiveTab(value);
+        }}>
           <TabsList className="mb-6">
             <TabsTrigger value="upcoming" className="gap-2">
               <Clock className="h-4 w-4" />

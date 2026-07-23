@@ -36,31 +36,87 @@ export function getEventByKey(key: string): WcaEvent | undefined {
 }
 
 /**
- * Calculate a single-completion result string from solves.
- * For average-of-5: drops best + worst, averages the middle 3.
- * For mean-of-3: averages all 3.
- * Returns null if not enough valid solves.
+ * Calculate a WCA-style round result from solve times (ms).
+ * null = DNF/DNS.
+ *
+ * Mean of 3: any DNF → DNF; otherwise mean of all 3.
+ * Average of 5: drop best + worst, average the middle 3.
+ *   DNF counts as worst. Two or more DNFs → DNF.
  */
 export function calculateResult(
-  times: (number | null)[],  // null = DNF
+  times: (number | null)[],
   format: 'average' | 'mean'
 ): number | 'DNF' | null {
   if (format === 'mean') {
-    if (times.length > 0 && times.every(t => t !== null)) {
-      return Math.round((times as number[]).reduce((a, b) => a + b, 0) / times.length);
+    if (times.length < 3) {
+      // Incomplete mean: already DNF if any DNF present, otherwise no result yet
+      if (times.some(t => t === null)) return 'DNF';
+      return null;
     }
-    return times.some(t => t !== null) ? 'DNF' : null;
+    if (times.some(t => t === null)) return 'DNF';
+    const total = (times as number[]).reduce((a, b) => a + b, 0);
+    return Math.round(total / 3);
   }
 
-  // Average of 5: need at least 3 non-DNF solves
-  const valid = times.filter(t => t !== null) as number[];
-  if (valid.length < 3) return 'DNF';
-  if (times.length >= 5) {
-    valid.sort((a, b) => a - b);
-    const middle = valid.slice(1, -1);
-    return Math.round(middle.reduce((a, b) => a + b, 0) / middle.length);
+  // Average of 5
+  if (times.length < 5) {
+    // Incomplete Ao5: 2+ DNFs already guarantees DNF
+    if (times.filter(t => t === null).length >= 2) return 'DNF';
+    return null;
   }
-  return Math.round(valid.reduce((a, b) => a + b, 0) / valid.length);
+
+  // Treat DNF as +Infinity so it sorts as the worst time
+  const ranked = times
+    .map(t => (t === null ? Number.POSITIVE_INFINITY : t))
+    .sort((a, b) => a - b);
+
+  // Drop best (index 0) and worst (index 4); average the middle three
+  const middle = ranked.slice(1, 4);
+  if (middle.some(t => !Number.isFinite(t))) return 'DNF';
+
+  return Math.round(middle.reduce((a, b) => a + b, 0) / 3);
+}
+
+/**
+ * Indices of the best and worst solves excluded from an Ao5 (WCA parentheses).
+ * Keeps solve order; picks the first matching index on ties.
+ */
+export function getAverageExcludedIndices(times: (number | null)[]): Set<number> {
+  const excluded = new Set<number>();
+  if (times.length < 5) return excluded;
+
+  let bestIdx = -1;
+  let bestVal = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < times.length; i += 1) {
+    const t = times[i];
+    if (t !== null && t < bestVal) {
+      bestVal = t;
+      bestIdx = i;
+    }
+  }
+
+  let worstIdx = -1;
+  // Prefer a DNF as worst (if multiple DNFs, the first one that isn't best)
+  for (let i = 0; i < times.length; i += 1) {
+    if (times[i] === null && i !== bestIdx) {
+      worstIdx = i;
+      break;
+    }
+  }
+  if (worstIdx === -1) {
+    let worstVal = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i < times.length; i += 1) {
+      const t = times[i];
+      if (t !== null && i !== bestIdx && t > worstVal) {
+        worstVal = t;
+        worstIdx = i;
+      }
+    }
+  }
+
+  if (bestIdx >= 0) excluded.add(bestIdx);
+  if (worstIdx >= 0) excluded.add(worstIdx);
+  return excluded;
 }
 
 export function formatTime(ms: number | null | 'DNF'): string {

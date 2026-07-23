@@ -1,18 +1,17 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import type { SolveInput } from '@/lib/solve-results';
 
-interface SolveInput {
-  solve_number: number;
-  time_ms: number | null;
-  penalty: string;
-}
+type SubmitTimesResult =
+  | { success: true; solves: SolveInput[] }
+  | { success: false; error: string };
 
 export async function submitTimesAction(
   roundId: string,
   competitionId: string,
   solves: SolveInput[],
-): Promise<{ success: boolean; error?: string }> {
+): Promise<SubmitTimesResult> {
   const supabase = await createClient();
 
   // 1. Get current user
@@ -28,6 +27,9 @@ export async function submitTimesAction(
 
   if (!round) return { success: false, error: 'Round not found' };
   if (round.status !== 'active') return { success: false, error: 'Round is not active' };
+  if (round.competition_event.competition_id !== competitionId) {
+    return { success: false, error: 'Round does not belong to this competition' };
+  }
 
   // 3. Verify user is a registered competitor for this competition
   const { data: competitor } = await supabase
@@ -60,16 +62,31 @@ export async function submitTimesAction(
   const roundFormat = (round.round_format || round.competition_event.event_format) as 'average' | 'mean';
   const solveCount = roundFormat === 'mean' ? 3 : 5;
 
-  if (solves.length === 0) return { success: false, error: 'Enter at least one time' };
+  if (solves.length !== solveCount) {
+    return { success: false, error: `Submit exactly ${solveCount} solves for this round` };
+  }
 
+  const solveNumbers = new Set<number>();
   for (const solve of solves) {
     if (solve.solve_number < 1 || solve.solve_number > solveCount) {
       return { success: false, error: `Invalid solve number: ${solve.solve_number}` };
     }
-    if (!['none', 'DNF', '+2', 'DNS'].includes(solve.penalty)) {
+    if (solveNumbers.has(solve.solve_number)) {
+      return { success: false, error: `Duplicate solve number: ${solve.solve_number}` };
+    }
+    solveNumbers.add(solve.solve_number);
+    if (!['none', 'DNF', '+2'].includes(solve.penalty)) {
       return { success: false, error: `Invalid penalty: ${solve.penalty}` };
     }
-    if (solve.penalty === 'none' && solve.time_ms !== null && solve.time_ms < 0) {
+    if (solve.penalty === 'DNF') {
+      if (solve.time_ms !== null) {
+        return { success: false, error: `${solve.penalty} must not include a numeric time` };
+      }
+    } else if (
+      solve.time_ms === null
+      || !Number.isInteger(solve.time_ms)
+      || solve.time_ms <= 0
+    ) {
       return { success: false, error: `Invalid time for solve ${solve.solve_number}` };
     }
   }
@@ -97,12 +114,9 @@ export async function submitTimesAction(
 
   const { error } = await supabase
     .from('solves')
-    .upsert(inserts, {
-      onConflict: 'round_id,competitor_id,solve_number',
-      ignoreDuplicates: false,
-    });
+    .insert(inserts);
 
   if (error) return { success: false, error: `Failed to submit times: ${error.message}` };
 
-  return { success: true };
+  return { success: true, solves };
 }

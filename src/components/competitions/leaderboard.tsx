@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { calculateResult, formatTime } from '@/lib/wca-events';
+import { calculateResult, formatTime, getAverageExcludedIndices } from '@/lib/wca-events';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { CuboidIcon as CubeIcon, Trophy, Medal, Award, Radio, Clock, CheckCircle2, XCircle } from 'lucide-react';
@@ -90,8 +90,10 @@ export function RoundLeaderboard({ roundId,eventKey,format,solveCount }:Props) {
         <TableHead className="text-right text-xs uppercase tracking-wider text-text-tertiary">Result</TableHead>
       </TableRow></TableHeader>
       <TableBody>
-        {solves.map((row,idx)=>{const r=calculateResult(row.solves,format);
-        return<TableRow key={row.competitor_id} className={`${idx<3?'bg-surface-hover/30 border-border/30':'border-border/30'} transition-colors duration-300`}>
+        {solves.map((row,idx)=>{
+          const r=calculateResult(row.solves,format);
+          const excluded = format === 'average' ? getAverageExcludedIndices(row.solves) : new Set<number>();
+          return<TableRow key={row.competitor_id} className={`${idx<3?'bg-surface-hover/30 border-border/30':'border-border/30'} transition-colors duration-300`}>
           <TableCell className="font-mono text-sm font-bold">
             {idx<3?<span className={`inline-flex items-center justify-center gap-1 rounded-md border px-2 py-0.5 text-xs ${topColors[idx]}`}>{topIcons[idx]}{topLabels[idx]}</span>:<span className="text-text-tertiary">{idx+1}</span>}
           </TableCell>
@@ -107,7 +109,22 @@ export function RoundLeaderboard({ roundId,eventKey,format,solveCount }:Props) {
               )}
             </div>
           </TableCell>
-          {Array.from({length:solveCount},(_,i)=><TableCell key={i} className="text-center font-mono text-xs">{i<row.solves.length?<span className={row.solves[i]===null?'text-destructive':''}>{formatTime(row.solves[i])}</span>:<span className="text-text-tertiary/30">—</span>}</TableCell>)}
+          {Array.from({length:solveCount},(_,i)=>{
+            if (i >= row.solves.length) {
+              return <TableCell key={i} className="text-center font-mono text-xs"><span className="text-text-tertiary/30">—</span></TableCell>;
+            }
+            const solve = row.solves[i];
+            const label = formatTime(solve);
+            const isDnf = solve === null;
+            const isExcluded = excluded.has(i);
+            return (
+              <TableCell key={i} className="text-center font-mono text-xs">
+                <span className={isDnf ? 'text-destructive' : isExcluded ? 'text-text-tertiary' : ''}>
+                  {isExcluded ? `(${label})` : label}
+                </span>
+              </TableCell>
+            );
+          })}
           <TableCell className="text-right font-mono text-sm font-bold">{r===null?<span className="text-text-tertiary/30">—</span>:r==='DNF'?<span className="text-destructive">DNF</span>:formatTime(r)}</TableCell>
         </TableRow>})}
       </TableBody>

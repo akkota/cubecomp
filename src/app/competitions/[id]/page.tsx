@@ -223,15 +223,17 @@ export default function CompetitionDetailPage() {
                       </Badge>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="p-0 divide-y divide-border/30">
-                    {eventRounds.map(round => {
+                  <CardContent className="p-0">
+                    {eventRounds.map((round, index) => {
                       const access = getRoundAccess(round);
                       return (
                         <div
                           key={round.id}
-                          className={`flex items-center justify-between px-4 py-3.5 ${
+                          className={`group flex items-center justify-between gap-4 px-4 py-4 sm:px-5 sm:py-4 ${
+                            index > 0 ? 'border-t border-border/25' : ''
+                          } ${
                             access.clickable
-                              ? 'cursor-pointer hover:bg-muted/30 transition-colors'
+                              ? 'cursor-pointer transition-colors hover:bg-surface-hover/40'
                               : 'opacity-60'
                           }`}
                           onClick={() => {
@@ -241,16 +243,16 @@ export default function CompetitionDetailPage() {
                             }
                           }}
                         >
-                          <div className="flex items-center gap-3">
-                            <span className="font-medium text-sm">Round {round.round_number}</span>
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="text-sm font-semibold tracking-tight">Round {round.round_number}</span>
                             {!access.clickable && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex shrink-0 items-center gap-2.5">
                             <Badge variant={access.badge.variant as any}>
                               {access.badge.label}
                             </Badge>
                             {access.clickable && (
-                              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:text-cube-blue" />
                             )}
                           </div>
                         </div>
