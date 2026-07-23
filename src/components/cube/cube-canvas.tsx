@@ -121,7 +121,7 @@ export default function CubeCanvas({ className = '' }: { className?: string }) {
     stateRef.current.reduced = media.matches;
 
     const dpr = Math.min(window.devicePixelRatio, 2);
-    const size = Math.min(280, window.innerWidth - 48);
+    const size = Math.min(480, window.innerWidth - 64);
     canvas.width = size * dpr;
     canvas.height = size * dpr;
     canvas.style.width = `${size}px`;
@@ -321,7 +321,7 @@ export default function CubeCanvas({ className = '' }: { className?: string }) {
 
     // Resize handler
     const onResize = () => {
-      const newSize = Math.min(280, window.innerWidth - 48);
+      const newSize = Math.min(480, window.innerWidth - 64);
       canvas.width = newSize * dpr;
       canvas.height = newSize * dpr;
       canvas.style.width = `${newSize}px`;

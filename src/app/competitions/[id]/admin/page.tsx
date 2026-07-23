@@ -128,7 +128,9 @@ export default function CompetitionAdminPage() {
               <div className="flex items-center gap-3"><h3 className="font-semibold">Round {r.round_number}</h3><Badge variant={V[r.status]??'outline'}>{r.status}</Badge></div>
               <div className="flex flex-wrap items-center gap-2">
                 {r.status==='pending'&&<>
-                  <Button variant="outline" size="sm" disabled={generating[r.id]||hs} onClick={()=>hgs(r,ce.event_key,rSolveCount)} className="gap-1.5"><ShuffleIcon className="h-3.5 w-3.5"/>{generating[r.id]?'Generating…':hs?'Has Scrambles':'Generate Scrambles'}</Button>
+                  {competition.generate_scrambles !== false && (
+                    <Button variant="outline" size="sm" disabled={generating[r.id]||hs} onClick={()=>hgs(r,ce.event_key,rSolveCount)} className="gap-1.5"><ShuffleIcon className="h-3.5 w-3.5"/>{generating[r.id]?'Generating…':hs?'Has Scrambles':'Generate Scrambles'}</Button>
+                  )}
                   {hs&&<Button variant="default" size="sm" disabled={!!startingRound} onClick={()=>hsr(r.id)} className="gap-1.5"><Play className="h-3.5 w-3.5"/>{startingRound===r.id?'Starting…':'Start'}</Button>}
                 </>}
                 {r.status==='active'&&<Button variant="destructive" size="sm" disabled={!!endingRound} onClick={()=>her(r.id)} className="gap-1.5"><Square className="h-3.5 w-3.5"/>{endingRound===r.id?'Ending…':'End Round'}</Button>}

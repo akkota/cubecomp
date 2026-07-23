@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { createClient } from '@/lib/supabase/client';
 import { WCA_EVENTS, type WcaEventKey } from '@/lib/wca-events';
 import { toast } from 'sonner';
-import { ChevronRight, Trophy, ArrowLeft, Layers } from 'lucide-react';
+import { ChevronRight, Trophy, ArrowLeft, Layers, ShuffleIcon } from 'lucide-react';
 
 const formSchema = z.object({
   name: z.string().min(3, 'Name must be at least 3 characters').max(100),
@@ -65,9 +65,10 @@ export function CreateCompetitionForm() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error('You must be logged in'); router.push('/login'); return; }
 
+      const generateScrambles = (document.getElementById('generate-scrambles') as HTMLInputElement)?.checked ?? true;
       const { data: comp, error: compError } = await supabase
         .from('competitions')
-        .insert({ name: data.name, description: data.description || '', created_by: user.id })
+        .insert({ name: data.name, description: data.description || '', created_by: user.id, generate_scrambles: generateScrambles })
         .select().single();
 
       if (compError) throw compError;
@@ -136,6 +137,16 @@ export function CreateCompetitionForm() {
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
               <Textarea id="description" placeholder="Optional description, rules, etc." rows={3} {...form.register('description')} />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border/50 p-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="generate-scrambles" className="flex items-center gap-2 text-sm font-medium">
+                  <ShuffleIcon className="h-4 w-4 text-cube-blue" />
+                  Generate Scrambles
+                </Label>
+                <p className="text-xs text-muted-foreground">Auto-generate WCA scrambles for every round. Turn off to only record times without scrambles.</p>
+              </div>
+              <Switch id="generate-scrambles" defaultChecked />
             </div>
           </CardContent>
         </Card>

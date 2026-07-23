@@ -12,7 +12,7 @@ import { getEventByKey } from '@/lib/wca-events';
 import { RoundLeaderboard } from '@/components/competitions/leaderboard';
 import { submitTimesAction } from '@/actions/submitTimes';
 import { toast } from 'sonner';
-import { Clock, Lock, Send, AlertTriangle, CuboidIcon as CubeIcon, Trophy, Timer } from 'lucide-react';
+import { Clock, Lock, Send, AlertTriangle, CuboidIcon as CubeIcon, Trophy, Timer, ShuffleIcon } from 'lucide-react';
 
 type ScrambleEntry = { id: string; scramble_number: number; scramble: string };
 type AccessState = 'loading' | 'granted' | 'blocked_registration' | 'blocked_qualification' | 'blocked_round_locked';
@@ -124,12 +124,24 @@ export default function RoundPage() {
       {accessState==='blocked_round_locked'&&<Blocked icon={Clock} title="Round not yet open" desc="This round hasn't started. Check back after advancement is calculated." color="border-cube-blue/30 bg-cube-blue/5"/>}
 
       {/* Scrambles */}
-      {accessState==='granted'&&scrambles.length>0&&(
+      {accessState==='granted'&&competition?.generate_scrambles!==false&&scrambles.length>0&&(
         <Card className="border-border/30">
           <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><CubeIcon className="h-4 w-4 text-cube-blue"/>Scrambles</CardTitle></CardHeader>
           <CardContent>
             <div className="grid gap-2 sm:grid-cols-2">
               {scrambles.map(s=><div key={s.id} className="flex items-start gap-2.5 rounded-lg border border-border/40 bg-surface-hover/30 p-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-cube-blue/10 text-xs font-bold text-cube-blue">{s.scramble_number}</span><code className="font-mono text-xs leading-relaxed break-all">{s.scramble}</code></div>)}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {/* Times-only mode notice */}
+      {accessState==='granted'&&competition?.generate_scrambles===false&&(
+        <Card className="border-border/30 border-dashed">
+          <CardContent className="flex items-center gap-3 py-4">
+            <ShuffleIcon className="h-5 w-5 text-text-tertiary" />
+            <div>
+              <p className="text-sm font-medium">Times-only mode</p>
+              <p className="text-xs text-text-secondary">Scrambles are not generated for this competition. Record your solving times directly below.</p>
             </div>
           </CardContent>
         </Card>
