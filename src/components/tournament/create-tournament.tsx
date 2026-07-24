@@ -91,32 +91,14 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
       if (!result.success) { setError(result.error); setGenerating(false); return; }
       setTournamentId(result.data.id);
 
-      // Insert participants
-      const tid = result.data.id;
-      const inserts = selected.map((cid, i) => ({
-        competitor_id: cid,
-        seed: i + 1,
-        qualifying_average: seedingType === 'seeded' ? Number(qualAverages[cid] || 0) : null,
-        initial_slot: i + 1,
-      }));
-
-      const { data: profiles } = await supabase.from('profiles')
-        .select('id, display_name')
-        .in('id', (await supabase.from('competitors').select('user_id').in('id', selected).then(r => r.data ?? []))
-          .map((c: any) => c.user_id));
-      const nameMap = new Map((profiles ?? []).map((p: any) => [p.id, p.display_name || 'Unknown']));
-
-      for (const pi of inserts) {
-        const { data: comp } = await supabase.from('competitors').select('user_id').eq('id', pi.competitor_id).single();
-        await supabase.from('tournament_participants').insert({
-          tournament_id: tid,
-          competitor_id: pi.competitor_id,
-          display_name_snapshot: nameMap.get(comp?.user_id ?? '') || 'Unknown',
-          seed: pi.seed,
-          qualifying_average: pi.qualifying_average,
-          initial_slot: pi.initial_slot,
-        });
+      // Insert participants via server action
+      const qualAvgs: Record<string, number> = {};
+      for (const cid of selected) {
+        const v = Number(qualAverages[cid] || 0);
+        if (!isNaN(v)) qualAvgs[cid] = v;
       }
+      const pResult = await setParticipantsAction(result.data.id, selected, qualAvgs);
+      if (!pResult.success) { setError(pResult.error); setGenerating(false); return; }
 
       setStep(3);
     } finally { setGenerating(false); }

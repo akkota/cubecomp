@@ -12,6 +12,7 @@ import { BracketView } from '@/components/tournament/bracket-view';
 import {
   generateBracketAction, activateTournamentAction, cancelTournamentAction,
   submitSolveResultAction, adminResolveTieAction,
+  reSolveAction,
 } from '@/actions/tournament';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import {
@@ -408,13 +409,8 @@ export function TournamentDetailView({ competitionId, tournamentId }: DetailProp
                           onClick={async () => {
                             setReSolving(s.id);
                             try {
-                              const scramble = tournament?.scramble_source === 'generated' && tournament?.event_key
-                                ? await fetch('/api/generate-scramble?' + new URLSearchParams({ eventKey: tournament.event_key })).then(r => r.json()).then(r => r.scramble).catch(() => null)
-                                : null;
-                              const { error: rpcErr } = await supabase.rpc('re_solve_tournament_tie', {
-                                p_tournament_id: tournamentId, p_solve_id: s.id, p_scramble: scramble,
-                              });
-                              if (rpcErr) { setError(rpcErr.message); } else { await fetchAll(); }
+                              const result = await reSolveAction(tournamentId, s.id);
+                              if (result.success) { await fetchAll(); } else { setError(result.error); }
                             } catch { setError('Failed to re-solve'); }
                             setReSolving(null);
                           }}

@@ -85,7 +85,7 @@ export async function updateTournamentConfigAction(
 export async function setParticipantsAction(
   tournamentId: string,
   competitorIds: string[],
-  qualifyingAverages: (number | null)[],
+  qualifyingAverages: Record<string, number>,
 ): Promise<ActionResult> {
   const supabase = await createClient();
   const auth = await checkAuthAdmin(supabase, tournamentId);
@@ -95,7 +95,37 @@ export async function setParticipantsAction(
   if (!t || t.status !== 'draft') return { success: false, error: 'Tournament must be in draft state' };
   if (competitorIds.length < 2) return { success: false, error: 'Need at least 2 competitors' };
 
-  return { success: true, data: { count: competitorIds.length } };
+  const { data: validComp } = await supabase
+    .from('competitors').select('id, user_id, competition_id')
+    .in('id', competitorIds).eq('competition_id', t.competition_id);
+  if (!validComp || validComp.length !== competitorIds.length) {
+    return { success: false, error: 'Competitors must be registered in this competition' };
+  }
+  const userIds = [...new Set(validComp.map(c => c.user_id))];
+  const { data: profiles } = await supabase.from('profiles').select('id, display_name').in('id', userIds);
+  const nameMap = new Map((profiles ?? []).map((p: any) => [p.id, p.display_name || 'Unknown']));
+  const compMap = new Map(validComp.map(c => [c.id, c]));
+
+  await supabase.from('tournament_participants').delete().eq('tournament_id', tournamentId);
+
+  let ordered = competitorIds;
+  if (t.seeding_type === 'seeded') {
+    ordered = [...competitorIds].sort((a, b) => (qualifyingAverages[a] ?? 999999) - (qualifyingAverages[b] ?? 999999));
+  }
+
+  for (let i = 0; i < ordered.length; i++) {
+    const cid = ordered[i];
+    const comp = compMap.get(cid);
+    if (!comp) continue;
+    await supabase.from('tournament_participants').insert({
+      tournament_id: tournamentId, competitor_id: cid,
+      display_name_snapshot: nameMap.get(comp.user_id) || 'Unknown',
+      seed: i + 1, qualifying_average: qualifyingAverages[cid] ?? null, initial_slot: i + 1,
+    });
+  }
+
+  await supabase.from('tournaments').update({ competitor_count: ordered.length }).eq('id', tournamentId);
+  return { success: true, data: { count: ordered.length } };
 }
 
 // ─── Generate Bracket ────────────────────────────────────────────────
@@ -296,6 +326,33 @@ export async function adminResolveTieAction(
     p_reason: reason,
   });
 
+  if (error) return { success: false, error: error.message };
+  return { success: true, data };
+}
+
+// ─── Re-Solve (server-side scramble generation) ──────────────────────
+
+export async function reSolveAction(
+  tournamentId: string,
+  solveId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const auth = await checkAuthAdmin(supabase, tournamentId);
+  if (!auth.ok) return auth.result;
+  const { data: t } = await supabase.from('tournaments').select('event_key, scramble_source').eq('id', tournamentId).single();
+  if (!t) return { success: false, error: 'Tournament not found' };
+  const { data: solve } = await supabase.from('tournament_match_solves').select('id, status').eq('id', solveId).single();
+  if (!solve) return { success: false, error: 'Solve not found' };
+  if (solve.status !== 'tied') return { success: false, error: 'Solve is not tied' };
+  let scramble: string | null = null;
+  if (t.scramble_source === 'generated' && t.event_key) {
+    const { generateScrambles } = await import('@/lib/scramble');
+    const scrambles = await generateScrambles(t.event_key, 1);
+    scramble = scrambles[0] || null;
+  }
+  const { data, error } = await supabase.rpc('re_solve_tournament_tie', {
+    p_tournament_id: tournamentId, p_solve_id: solveId, p_scramble: scramble,
+  });
   if (error) return { success: false, error: error.message };
   return { success: true, data };
 }
