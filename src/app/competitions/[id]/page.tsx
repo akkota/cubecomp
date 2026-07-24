@@ -21,7 +21,8 @@ import { deriveCompetitionStatus } from '@/lib/competition-status';
 import { registerForCompetitionAction, checkCompetitionUnlockAction } from '@/actions/competitionPrivacy';
 import { WCA_EVENTS } from '@/lib/wca-events';
 import { toast } from 'sonner';
-import { Trophy, Users, Lock, Calendar, ArrowRight, CuboidIcon as CubeIcon, UserPlus, Globe } from 'lucide-react';
+import { CompetitionSection } from '@/components/tournament/competition-section';
+import { Trophy, Users, Lock, Calendar, ArrowRight, CuboidIcon as CubeIcon, UserPlus, Globe, Swords } from 'lucide-react';
 
 export default function CompetitionDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,6 +31,7 @@ export default function CompetitionDetailPage() {
   const [rounds, setRounds] = useState<any[]>([]);
   const [roundParticipation, setRoundParticipation] = useState<Set<string>>(new Set());
   const [isOwner, setIsOwner] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
   const [hasUnlock, setHasUnlock] = useState(false);
   const [competitorCount, setCompetitorCount] = useState(0);
@@ -55,6 +57,17 @@ export default function CompetitionDetailPage() {
       }
       setCompetition(comp);
       setIsOwner(user?.id === comp.created_by);
+      setIsAdmin(user?.id === comp.created_by);
+
+      if (user && user.id !== comp.created_by) {
+        const { data: adminRow } = await supabase
+          .from('competition_admins')
+          .select('id')
+          .eq('competition_id', id)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (adminRow) setIsAdmin(true);
+      }
 
       const { data: compEvents } = await supabase
         .from('competition_events')
@@ -251,6 +264,9 @@ export default function CompetitionDetailPage() {
           <TabsTrigger value="competitors" className="gap-2">
             <Users className="h-4 w-4" /> Competitors
           </TabsTrigger>
+          <TabsTrigger value="head-to-head" className="gap-2">
+            <Swords className="h-4 w-4" /> Head-to-Head
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="events">
@@ -336,6 +352,10 @@ export default function CompetitionDetailPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="head-to-head">
+          <CompetitionSection competitionId={id} />
         </TabsContent>
       </Tabs>
 
