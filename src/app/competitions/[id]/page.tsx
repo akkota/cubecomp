@@ -33,7 +33,9 @@ export default function CompetitionDetailPage() {
   const [isOwner, setIsOwner] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isH2H, setH2H] = useState(false);
+  const [tournamentStatuses, setTournamentStatuses] = useState<string[]>([]);
   const [isRegistered, setIsRegistered] = useState(false);
+  const [registrationLocked, setRegistrationLocked] = useState(false);
   const [hasUnlock, setHasUnlock] = useState(false);
   const [competitorCount, setCompetitorCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -61,6 +63,20 @@ export default function CompetitionDetailPage() {
       setIsAdmin(user?.id === comp.created_by);
       const isH2H = comp.competition_type === 'head_to_head';
       setH2H(isH2H);
+
+      if (isH2H) {
+        const { data: ts } = await supabase
+          .from('tournaments')
+          .select('id, status')
+          .eq('competition_id', id)
+          .neq('status', 'cancelled');
+        const statuses = (ts ?? []).map(t => t.status as string);
+        setTournamentStatuses(statuses);
+        setRegistrationLocked(statuses.some(s => s === 'ready' || s === 'active' || s === 'completed'));
+      } else {
+        setTournamentStatuses([]);
+        setRegistrationLocked(false);
+      }
 
       if (user && user.id !== comp.created_by) {
         const { data: adminRow } = await supabase
@@ -168,19 +184,31 @@ export default function CompetitionDetailPage() {
   const getRoundsForEvent = (eventId: string) =>
     rounds.filter(r => r.competition_event_id === eventId);
 
-  const displayStatus = deriveCompetitionStatus(rounds);
-  const registrationOpen = displayStatus !== 'completed';
+  const displayStatus = deriveCompetitionStatus(rounds, {
+    competitionType: competition.competition_type,
+    tournamentStatuses,
+  });
+  const registrationOpen = displayStatus !== 'completed' && !registrationLocked;
   const isPrivate = competition.visibility === 'private';
 
   const getRoundAccess = (round: any): { clickable: boolean; badge: { label: string; variant: string } } => {
-    if (isOwner) return { clickable: true, badge: { label: round.status, variant: round.status === 'active' ? 'destructive' : round.status === 'completed' ? 'secondary' : 'outline' } };
-    if (!registrationOpen) {
+    if (isOwner || isAdmin) {
+      return {
+        clickable: true,
+        badge: {
+          label: round.status,
+          variant: round.status === 'active' ? 'destructive' : round.status === 'completed' ? 'secondary' : 'outline',
+        },
+      };
+    }
+    // Completed rounds stay open for viewing results even after registration closes
+    if (round.status === 'completed' && (isRegistered || competition.allow_spectators)) {
+      return { clickable: true, badge: { label: 'Completed', variant: 'secondary' } };
+    }
+    if (!registrationOpen && round.status !== 'completed') {
       return {
         clickable: false,
-        badge: {
-          label: round.status === 'completed' ? 'Completed' : 'Closed',
-          variant: 'secondary',
-        },
+        badge: { label: 'Closed', variant: 'secondary' },
       };
     }
     if (!isRegistered) return round.round_number === 1
@@ -252,10 +280,10 @@ export default function CompetitionDetailPage() {
             )}
             {!isOwner && !isRegistered && !registrationOpen && (
               <Badge variant="secondary" className="gap-1.5">
-                Registration closed
+                {registrationLocked ? 'Registration closed (bracket locked)' : 'Registration closed'}
               </Badge>
             )}
-            {isOwner && (
+            {(isOwner || isAdmin) && (
               <Button variant="outline" size="sm" onClick={() => window.location.href = `/competitions/${id}/admin`}>
                 Manage Competition
               </Button>
@@ -265,114 +293,104 @@ export default function CompetitionDetailPage() {
       </div>
 
       {isH2H ? (
-        <CompetitionSection competitionId={id} />
+        <CompetitionSection competitionId={id} isAdmin={isAdmin} />
       ) : (
-        <>
-      <Tabs defaultValue="events">
-        <TabsList className="mb-6">
-          <TabsTrigger value="events" className="gap-2">
-            <Trophy className="h-4 w-4" /> Events
-          </TabsTrigger>
-          <TabsTrigger value="competitors" className="gap-2">
-            <Users className="h-4 w-4" /> Competitors
-          </TabsTrigger>
-          <TabsTrigger value="head-to-head" className="gap-2">
-            <Swords className="h-4 w-4" /> Head-to-Head
-          </TabsTrigger>
-        </TabsList>
+        <Tabs defaultValue="events">
+          <TabsList className="mb-6">
+            <TabsTrigger value="events" className="gap-2">
+              <Trophy className="h-4 w-4" /> Events
+            </TabsTrigger>
+            <TabsTrigger value="competitors" className="gap-2">
+              <Users className="h-4 w-4" /> Competitors
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="events">
-          <div className="grid gap-4">
-            {events.map(cEvent => {
-              const wcaEvent = WCA_EVENTS.find(e => e.key === cEvent.event_key);
-              const eventRounds = getRoundsForEvent(cEvent.id);
-              return (
-                <Card key={cEvent.id} className="overflow-hidden">
-                  <CardHeader className="border-b border-border bg-muted pb-3">
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <span className="text-xl">{wcaEvent?.icon}</span>
-                      {wcaEvent?.name}
-                      <Badge variant="outline" className="ml-auto text-xs">
-                        {cEvent.round_count} round{cEvent.round_count > 1 ? 's' : ''}
-                      </Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    {eventRounds.map((round, index) => {
-                      const access = getRoundAccess(round);
-                      return (
-                        <div
-                          key={round.id}
-                          className={`group flex items-center justify-between gap-4 px-4 py-4 sm:px-5 sm:py-4 ${
-                            index > 0 ? 'border-t border-border' : ''
-                          } ${
-                            access.clickable
-                              ? 'cursor-pointer transition-colors hover:bg-surface-hover/40'
-                              : 'opacity-60'
-                          }`}
-                          onClick={() => {
-                            if (!access.clickable) return;
-                            if (!isRegistered && !isOwner) {
-                              handleRegisterClick();
-                              return;
-                            }
-                            window.location.href =
-                              `/competitions/${id}/events/${cEvent.event_key}/round/${round.round_number}`;
-                          }}
-                        >
-                          <div className="flex min-w-0 items-center gap-3">
-                            <span className="text-sm font-semibold tracking-tight">Round {round.round_number}</span>
-                            {!access.clickable && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
+          <TabsContent value="events">
+            <div className="grid gap-4">
+              {events.map(cEvent => {
+                const wcaEvent = WCA_EVENTS.find(e => e.key === cEvent.event_key);
+                const eventRounds = getRoundsForEvent(cEvent.id);
+                return (
+                  <Card key={cEvent.id} className="overflow-hidden">
+                    <CardHeader className="border-b border-border bg-muted pb-3">
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <span className="text-xl">{wcaEvent?.icon}</span>
+                        {wcaEvent?.name}
+                        <Badge variant="outline" className="ml-auto text-xs">
+                          {cEvent.round_count} round{cEvent.round_count > 1 ? 's' : ''}
+                        </Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      {eventRounds.map((round, index) => {
+                        const access = getRoundAccess(round);
+                        return (
+                          <div
+                            key={round.id}
+                            className={`group flex items-center justify-between gap-4 px-4 py-4 sm:px-5 sm:py-4 ${
+                              index > 0 ? 'border-t border-border' : ''
+                            } ${
+                              access.clickable
+                                ? 'cursor-pointer transition-colors hover:bg-surface-hover/40'
+                                : 'opacity-60'
+                            }`}
+                            onClick={() => {
+                              if (!access.clickable) return;
+                              if (!isRegistered && !isOwner) {
+                                handleRegisterClick();
+                                return;
+                              }
+                              window.location.href =
+                                `/competitions/${id}/events/${cEvent.event_key}/round/${round.round_number}`;
+                            }}
+                          >
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span className="text-sm font-semibold tracking-tight">Round {round.round_number}</span>
+                              {!access.clickable && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2.5">
+                              <Badge variant={access.badge.variant as any}>
+                                {access.badge.label}
+                              </Badge>
+                              {access.clickable && (
+                                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:text-cube-blue" />
+                              )}
+                            </div>
                           </div>
-                          <div className="flex shrink-0 items-center gap-2.5">
-                            <Badge variant={access.badge.variant as any}>
-                              {access.badge.label}
-                            </Badge>
-                            {access.clickable && (
-                              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:text-cube-blue" />
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </TabsContent>
+                        );
+                      })}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </TabsContent>
 
-        <TabsContent value="competitors">
-          <Card>
-            <CardContent className="flex flex-col items-center gap-4 py-12">
-              <Users className={`h-10 w-10 ${competitorCount === 0 ? 'text-muted-foreground/40' : 'text-cube-blue'}`} />
-              <div className="text-center">
-                {competitorCount === 0 ? (
-                  <>
-                    <p className="font-medium">No competitors registered yet</p>
-                    {!isRegistered && !isOwner && registrationOpen && (
-                      <Button onClick={handleRegisterClick} variant="outline" size="sm" className="mt-3 gap-2" disabled={registering}>
-                        <UserPlus className="h-4 w-4" /> Be the first to register
-                      </Button>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    <span className="font-semibold text-foreground">{competitorCount}</span> competitor{competitorCount !== 1 ? 's' : ''} registered
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="head-to-head">
-          <CompetitionSection competitionId={id} />
-        </TabsContent>
-      </Tabs>
-        </>
-      )
-      }
+          <TabsContent value="competitors">
+            <Card>
+              <CardContent className="flex flex-col items-center gap-4 py-12">
+                <Users className={`h-10 w-10 ${competitorCount === 0 ? 'text-muted-foreground/40' : 'text-cube-blue'}`} />
+                <div className="text-center">
+                  {competitorCount === 0 ? (
+                    <>
+                      <p className="font-medium">No competitors registered yet</p>
+                      {!isRegistered && !isOwner && registrationOpen && (
+                        <Button onClick={handleRegisterClick} variant="outline" size="sm" className="mt-3 gap-2" disabled={registering}>
+                          <UserPlus className="h-4 w-4" /> Be the first to register
+                        </Button>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      <span className="font-semibold text-foreground">{competitorCount}</span> competitor{competitorCount !== 1 ? 's' : ''} registered
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      )}
 
       <Dialog open={passwordOpen} onOpenChange={setPasswordOpen}>
         <DialogContent className="sm:max-w-md">

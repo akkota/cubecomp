@@ -58,15 +58,31 @@ export function CreateCompetitionForm() {
     defaultValues: { name: '', description: '' },
   });
 
+  const setCompetitionTypeAndReset = (type: 'standard' | 'head_to_head') => {
+    setCompetitionType(type);
+    // Head-to-head competitions allow exactly one event
+    if (type === 'head_to_head') {
+      setSelectedEvents(prev => {
+        if (prev.length <= 1) return prev.map(e => ({ ...e, roundCount: 1 }));
+        return [{ ...prev[0], roundCount: 1 }];
+      });
+    }
+  };
+
   const toggleEvent = (eventKey: WcaEventKey) => {
     setSelectedEvents(prev => {
       const existing = prev.find(e => e.key === eventKey);
       if (existing) return prev.filter(e => e.key !== eventKey);
-      return [...prev, {
+
+      const next = {
         key: eventKey,
         roundCount: 1,
         format: defaultFormatForEvent(eventKey),
-      }];
+      };
+
+      // Head-to-head: single event only (replace any previous selection)
+      if (competitionType === 'head_to_head') return [next];
+      return [...prev, next];
     });
   };
 
@@ -85,6 +101,11 @@ export function CreateCompetitionForm() {
   const handleSubmit = async (data: { name: string; description?: string }) => {
     if (selectedEvents.length === 0) {
       toast.error('Select at least one event');
+      return;
+    }
+
+    if (competitionType === 'head_to_head' && selectedEvents.length !== 1) {
+      toast.error('Head-to-head competitions require exactly one event');
       return;
     }
 
@@ -120,7 +141,9 @@ export function CreateCompetitionForm() {
           generate_scrambles: competitionType === 'head_to_head' ? true : generateScrambles,
           allow_spectators: allowSpectators,
           require_verified_solves: requireVerified,
-          visibility,
+          // Always insert as public; configure_competition_visibility performs the private transition
+          // so the password trigger and secrets row stay consistent.
+          visibility: 'public',
         })
         .select('id, name, visibility, competition_type')
         .single();
@@ -134,7 +157,6 @@ export function CreateCompetitionForm() {
           competitionPassword.trim(),
         );
         if (!privacy.success) {
-          // Roll back the competition if password setup fails
           await supabase.from('competitions').delete().eq('id', comp.id);
           throw new Error(privacy.error);
         }
@@ -221,7 +243,7 @@ export function CreateCompetitionForm() {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setCompetitionType('standard')}
+                  onClick={() => setCompetitionTypeAndReset('standard')}
                   className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
                     competitionType === 'standard'
                       ? 'border-cube-blue/40 bg-cube-blue/10 text-foreground'
@@ -232,7 +254,7 @@ export function CreateCompetitionForm() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setCompetitionType('head_to_head')}
+                  onClick={() => setCompetitionTypeAndReset('head_to_head')}
                   className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
                     competitionType === 'head_to_head'
                       ? 'border-cube-blue/40 bg-cube-blue/10 text-foreground'
@@ -245,7 +267,7 @@ export function CreateCompetitionForm() {
               <p className="text-xs text-muted-foreground">
                 {competitionType === 'standard'
                   ? 'WCA-format with multi-round events, leaderboards, and advancement.'
-                  : 'Bracket tournament with single/double elimination, best-of-3/5 sets, and head-to-head matches.'}
+                  : 'Bracket tournament for a single event — single/double elimination, best-of-3/5 sets, and head-to-head matches.'}
               </p>
             </div>
             <div className="space-y-2">
@@ -345,14 +367,17 @@ export function CreateCompetitionForm() {
           </CardContent>
         </Card>
 
-        {competitionType === 'standard' && (<>
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Layers className="h-5 w-5 text-cube-green" />
               Events
             </CardTitle>
-            <CardDescription>Select the official WCA events for this competition.</CardDescription>
+            <CardDescription>
+              {competitionType === 'head_to_head'
+                ? 'Choose exactly one WCA event for this head-to-head competition.'
+                : 'Select the official WCA events for this competition.'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {selectedEvents.length > 0 && (
@@ -374,12 +399,20 @@ export function CreateCompetitionForm() {
                 return (
                   <div
                     key={event.key}
+                    role="button"
+                    tabIndex={0}
                     className={`flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-all duration-200 ${
                       selected
                         ? 'border-cube-blue/50 bg-cube-blue/5 shadow-sm'
                         : 'border-border hover:border-border hover:bg-accent/50'
                     }`}
                     onClick={() => toggleEvent(event.key)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleEvent(event.key);
+                      }
+                    }}
                   >
                     <div className="flex items-center gap-2.5">
                       <span className="text-lg">{event.icon}</span>
@@ -392,7 +425,11 @@ export function CreateCompetitionForm() {
                         </p>
                       </div>
                     </div>
-                    <Switch checked={!!selected} />
+                    <Switch
+                      checked={!!selected}
+                      onClick={e => e.stopPropagation()}
+                      onCheckedChange={() => toggleEvent(event.key)}
+                    />
                   </div>
                 );
               })}
@@ -400,7 +437,7 @@ export function CreateCompetitionForm() {
           </CardContent>
         </Card>
 
-        {selectedEvents.length > 0 && (
+        {competitionType === 'standard' && selectedEvents.length > 0 && (
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -478,8 +515,6 @@ export function CreateCompetitionForm() {
               })}
             </CardContent>
           </Card>
-        )}
-        </>
         )}
 
         <div className="flex justify-end">

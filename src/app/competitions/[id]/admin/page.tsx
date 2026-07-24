@@ -183,7 +183,7 @@ export default function CompetitionAdminPage() {
   const fetchAdmins = async () => {
     const { data } = await supabase
       .from("competition_admins")
-      .select("*,user:user_id(id,email,username,display_name)")
+      .select("*,user:user_id(id,username,display_name)")
       .eq("competition_id", id);
     setAdmins(data ?? []);
   };
@@ -973,13 +973,13 @@ export default function CompetitionAdminPage() {
                         </div>
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold tracking-tight">
-                            {a.user?.display_name ||
-                              a.user?.username ||
-                              a.user?.email}
+                            {a.user?.display_name || a.user?.username || 'Admin'}
                           </p>
-                          <p className="truncate text-xs text-text-tertiary">
-                            {a.user?.email}
-                          </p>
+                          {a.user?.username && (
+                            <p className="truncate text-xs text-text-tertiary">
+                              @{a.user.username}
+                            </p>
+                          )}
                         </div>
                       </div>
                       {isOwner && (

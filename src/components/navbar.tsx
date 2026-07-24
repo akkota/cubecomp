@@ -67,9 +67,9 @@ export function Navbar() {
 
         {/* Desktop */}
         <nav className="hidden md:flex items-center gap-6">
-          <Link href="/" className={linkClass('/')}>
+          <Link href="/competitions" className={linkClass('/competitions')}>
             Competitions
-            {pathname === '/' && <span className="absolute -bottom-[18px] left-1/2 -translate-x-1/2 h-[2px] w-8 rounded-full bg-cube-blue" />}
+            {pathname === '/competitions' && <span className="absolute -bottom-[18px] left-1/2 -translate-x-1/2 h-[2px] w-8 rounded-full bg-cube-blue" />}
           </Link>
           {!loading && user && <Link href="/dashboard" className={linkClass('/dashboard')}>
             Dashboard
@@ -102,7 +102,7 @@ export function Navbar() {
 
       {mobileOpen && (
         <div className="md:hidden border-t border-border bg-navbar/98 backdrop-blur-xl p-4 space-y-1">
-          <Link href="/" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Competitions</Link>
+          <Link href="/competitions" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Competitions</Link>
           {user && <Link href="/dashboard" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Dashboard</Link>}
           {user && <Link href="/profile" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Profile</Link>}
           {user ? (

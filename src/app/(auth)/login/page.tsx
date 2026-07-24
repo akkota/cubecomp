@@ -1,9 +1,18 @@
 import { LoginForm } from '@/components/auth/login-form';
 
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string; redirect?: string }>;
+}) {
+  const params = await searchParams;
+  const raw = params.next || params.redirect || '/dashboard';
+  // Only allow same-origin relative paths
+  const redirectTo = raw.startsWith('/') && !raw.startsWith('//') ? raw : '/dashboard';
+
   return (
     <div className="flex min-h-[80vh] items-center justify-center">
-      <LoginForm />
+      <LoginForm redirectTo={redirectTo} />
     </div>
   );
 }

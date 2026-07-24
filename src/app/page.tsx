@@ -68,10 +68,24 @@ export default function HomePage() {
         }
       }
 
-      // Derive display status from rounds
+      const { data: tournaments } = await supabase
+        .from('tournaments')
+        .select('competition_id, status')
+        .in('competition_id', compIds)
+        .neq('status', 'cancelled');
+
+      const tournamentsByComp = new Map<string, string[]>();
+      for (const cId of compIds) tournamentsByComp.set(cId, []);
+      for (const t of tournaments ?? []) {
+        tournamentsByComp.get(t.competition_id)?.push(t.status);
+      }
+
       const enriched: CompWithStatus[] = comps.map(c => ({
         ...c,
-        displayStatus: deriveCompetitionStatus(roundsByComp.get(c.id) ?? []),
+        displayStatus: deriveCompetitionStatus(roundsByComp.get(c.id) ?? [], {
+          competitionType: c.competition_type,
+          tournamentStatuses: tournamentsByComp.get(c.id) ?? [],
+        }),
       }));
 
       setCompetitions(enriched);
@@ -266,7 +280,7 @@ function HeroSection() {
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Button>
             </Link>
-            <Link href="/">
+            <Link href="/competitions">
               <Button variant="outline" size="lg" className="gap-2 h-12 px-6 text-base">
                 <BarChart3 className="h-5 w-5" />
                 Browse Events
