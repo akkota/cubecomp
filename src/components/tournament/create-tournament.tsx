@@ -88,8 +88,18 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
         matchFormat,
         scrambleSource,
       });
-      if (!result.success) { setError(result.error); return; }
+      if (!result.success) { setError(result.error); setGenerating(false); return; }
       setTournamentId(result.data.id);
+
+      // Insert participants via server action
+      const qualAvgs: Record<string, number> = {};
+      for (const cid of selected) {
+        const v = Number(qualAverages[cid] || 0);
+        if (!isNaN(v)) qualAvgs[cid] = v;
+      }
+      const pResult = await setParticipantsAction(result.data.id, selected, qualAvgs);
+      if (!pResult.success) { setError(pResult.error); setGenerating(false); return; }
+
       setStep(3);
     } finally { setGenerating(false); }
   };
@@ -99,7 +109,7 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
     setGenerating(true);
     try {
       const result = await generateBracketAction(tournamentId);
-      if (!result.success) { setError(result.error); return; }
+      if (!result.success) { setError(result.error); setGenerating(false); return; }
       router.push(`/competitions/${competitionId}/tournaments/${tournamentId}`);
     } finally { setGenerating(false); }
   };
