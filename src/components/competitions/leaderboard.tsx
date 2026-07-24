@@ -119,13 +119,12 @@ export function RoundLeaderboard({ roundId, format, solveCount }: Props) {
     setSolves(rows);
     setLoading(false);
 
-    const { data: subs } = await supabase
-      .from("round_submissions")
-      .select("competitor_id,verification_status")
-      .eq("round_id", roundId);
+    const { data: subs } = await supabase.rpc("get_round_verification_statuses", {
+      p_round_id: roundId,
+    });
     const vm = new Map<string, string>();
     for (const s of subs ?? []) {
-      if (s.verification_status !== "none") {
+      if (s.verification_status && s.verification_status !== "none") {
         vm.set(s.competitor_id, s.verification_status);
       }
     }
