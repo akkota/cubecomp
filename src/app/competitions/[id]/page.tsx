@@ -139,6 +139,10 @@ export default function CompetitionDetailPage() {
 
   const handleRegisterClick = () => {
     if (!competition) return;
+    if (!registrationOpen) {
+      toast.error('Registration is closed for this competition.');
+      return;
+    }
     if (competition.visibility === 'private' && !hasUnlock && !isOwner) {
       setPassword('');
       setPasswordOpen(true);
@@ -211,24 +215,53 @@ export default function CompetitionDetailPage() {
         },
       };
     }
-    // Completed rounds stay open for viewing results even after registration closes
-    if (round.status === 'completed' && (isRegistered || competition.allow_spectators)) {
+
+    // Unregistered users: never offer register after the competition is closed
+    if (!isRegistered) {
+      if (!registrationOpen) {
+        if (competition.allow_spectators && round.status === 'completed') {
+          return { clickable: true, badge: { label: 'Completed', variant: 'secondary' } };
+        }
+        return {
+          clickable: false,
+          badge: {
+            label: round.status === 'completed' ? 'Completed' : 'Closed',
+            variant: 'secondary',
+          },
+        };
+      }
+      return round.round_number === 1
+        ? {
+            clickable: true,
+            badge: {
+              label: isPrivate && !hasUnlock ? 'Password required' : 'Register to compete',
+              variant: 'outline',
+            },
+          }
+        : { clickable: false, badge: { label: 'Locked', variant: 'secondary' } };
+    }
+
+    // Registered competitors
+    if (round.status === 'completed') {
       return { clickable: true, badge: { label: 'Completed', variant: 'secondary' } };
     }
-    if (!registrationOpen && round.status !== 'completed') {
+    if (round.status === 'pending') {
+      return round.round_number === 1
+        ? { clickable: false, badge: { label: 'Not started', variant: 'outline' } }
+        : { clickable: false, badge: { label: 'Locked', variant: 'secondary' } };
+    }
+    if (round.round_number === 1) {
       return {
-        clickable: false,
-        badge: { label: 'Closed', variant: 'secondary' },
+        clickable: true,
+        badge: {
+          label: round.status === 'active' ? 'Open' : 'Completed',
+          variant: round.status === 'active' ? 'destructive' : 'secondary',
+        },
       };
     }
-    if (!isRegistered) return round.round_number === 1
-      ? { clickable: true, badge: { label: isPrivate && !hasUnlock ? 'Password required' : 'Register to compete', variant: 'outline' } }
-      : { clickable: false, badge: { label: 'Locked', variant: 'secondary' } };
-    if (round.status === 'pending') return round.round_number === 1
-      ? { clickable: false, badge: { label: 'Not started', variant: 'outline' } }
-      : { clickable: false, badge: { label: 'Locked', variant: 'secondary' } };
-    if (round.round_number === 1) return { clickable: true, badge: { label: round.status === 'active' ? 'Open' : 'Completed', variant: round.status === 'active' ? 'destructive' : 'secondary' } };
-    if (roundParticipation.has(round.id)) return { clickable: true, badge: { label: 'Qualified ✓', variant: 'default' } };
+    if (roundParticipation.has(round.id)) {
+      return { clickable: true, badge: { label: 'Qualified ✓', variant: 'default' } };
+    }
     return { clickable: false, badge: { label: 'Not qualified', variant: 'secondary' } };
   };
 
@@ -348,7 +381,9 @@ export default function CompetitionDetailPage() {
                             }`}
                             onClick={() => {
                               if (!access.clickable) return;
-                              if (!isRegistered && !isOwner) {
+                              // Only open registration when it's actually open —
+                              // otherwise navigate (e.g. spectator viewing results).
+                              if (!isRegistered && !isOwner && !isAdmin && registrationOpen) {
                                 handleRegisterClick();
                                 return;
                               }

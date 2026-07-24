@@ -157,3 +157,15 @@ test('privacy action refreshes status before register RPC', () => {
   assert.match(actions, /competition_registration_open/);
   assert.match(actions, /register_for_competition/);
 });
+
+test('detail page blocks register CTA when registration is closed', () => {
+  const page = readFileSync(join(root, 'src/app/competitions/[id]/page.tsx'), 'utf8');
+  // Unregistered + closed must short-circuit before any "Register to compete" path
+  const closedGate = page.indexOf('if (!registrationOpen)');
+  const registerLabel = page.indexOf("'Register to compete'");
+  assert.ok(closedGate > 0, 'expected registrationOpen gate in getRoundAccess');
+  assert.ok(registerLabel > closedGate, 'Register CTA must come after closed-registration gate');
+  // Round click must not open registration when closed (spectators may still navigate)
+  assert.match(page, /!isRegistered && !isOwner && !isAdmin && registrationOpen/);
+  assert.match(page, /Registration is closed for this competition/);
+});
