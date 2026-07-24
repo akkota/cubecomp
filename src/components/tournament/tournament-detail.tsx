@@ -13,6 +13,7 @@ import {
   generateBracketAction, activateTournamentAction, cancelTournamentAction,
   submitSolveResultAction, adminResolveTieAction,
 } from '@/actions/tournament';
+import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import {
   ArrowLeft, Play, XCircle, CheckCircle2, Trophy, RotateCcw,
   Swords, Timer, AlertTriangle
@@ -77,7 +78,9 @@ interface FullParticipant {
 
 export function TournamentDetailView({ competitionId, tournamentId }: DetailProps) {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = createSupabaseClient();
+  const [undoing, setUndoing] = useState<string | null>(null);
+  const [reSolving, setReSolving] = useState<string | null>(null);
   const [tournament, setTournament] = useState<any>(null);
   const [participants, setParticipants] = useState<FullParticipant[]>([]);
   const [matches, setMatches] = useState<FullMatch[]>([]);
@@ -384,8 +387,8 @@ export function TournamentDetailView({ competitionId, tournamentId }: DetailProp
                   .sort((a, b) => b.created_at?.localeCompare(a.created_at ?? '') ?? 0)
                   .slice(0, 5)
                   .map(s => (
-                    <div key={s.id} className="flex items-center justify-between text-xs p-1.5 rounded bg-surface-hover">
-                      <span className="text-text-secondary">#{s.solve_number}</span>
+                    <div key={s.id} className="flex items-center justify-between text-xs p-1.5 rounded bg-surface-hover gap-1">
+                      <span className="text-text-secondary">#{s.solve_number}{s.re_solve_attempt > 0 ? `r${s.re_solve_attempt}` : ''}</span>
                       <span className={s.winner_id === activeMatch.competitor1_id ? 'text-cube-green' : 'text-text-secondary'}>
                         {s.competitor1_time_ms !== null ? formatTime(s.competitor1_time_ms) : s.competitor1_penalty}
                         {s.competitor1_penalty === '+2' ? '+2' : ''}
@@ -398,6 +401,42 @@ export function TournamentDetailView({ competitionId, tournamentId }: DetailProp
                       <Badge variant={s.status === 'tied' ? 'outline' : 'secondary'} className="text-[10px]">
                         {s.status === 'tied' ? 'Tied' : 'Done'}
                       </Badge>
+                      {s.status === 'tied' && isAdmin && (
+                        <button
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-cube-blue/20 text-cube-blue hover:bg-cube-blue/30 disabled:opacity-50 shrink-0"
+                          disabled={reSolving === s.id}
+                          onClick={async () => {
+                            setReSolving(s.id);
+                            try {
+                              const scramble = tournament?.scramble_source === 'generated' && tournament?.event_key
+                                ? await fetch('/api/generate-scramble?' + new URLSearchParams({ eventKey: tournament.event_key })).then(r => r.json()).then(r => r.scramble).catch(() => null)
+                                : null;
+                              const { error: rpcErr } = await supabase.rpc('re_solve_tournament_tie', {
+                                p_tournament_id: tournamentId, p_solve_id: s.id, p_scramble: scramble,
+                              });
+                              if (rpcErr) { setError(rpcErr.message); } else { await fetchAll(); }
+                            } catch { setError('Failed to re-solve'); }
+                            setReSolving(null);
+                          }}
+                        >{reSolving === s.id ? '...' : 'Re-solve'}</button>
+                      )}
+                      {s.status === 'completed' && isAdmin && activeSolvesInSet.filter(x => x.status === 'completed' && x.created_at && s.created_at && x.created_at > s.created_at).length === 0 && (
+                        <button
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/20 text-destructive hover:bg-destructive/30 disabled:opacity-50 shrink-0"
+                          disabled={undoing === s.id}
+                          onClick={async () => {
+                            if (!confirm('Undo this solve? Set/match progression will be reverted.')) return;
+                            setUndoing(s.id);
+                            try {
+                              const { error: rpcErr } = await supabase.rpc('undo_tournament_solve', {
+                                p_tournament_id: tournamentId, p_solve_id: s.id,
+                              });
+                              if (rpcErr) { setError(rpcErr.message); } else { await fetchAll(); }
+                            } catch { setError('Failed to undo'); }
+                            setUndoing(null);
+                          }}
+                        >{undoing === s.id ? '...' : 'Undo'}</button>
+                      )}
                     </div>
                   ))}
               </div>
