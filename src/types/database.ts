@@ -111,3 +111,89 @@ export type LeaderboardEntry = {
   result: number | 'DNF' | null;
   formatted_result: string;
 };
+
+// ─── Head-to-Head Tournament Types ─────────────────────
+
+export interface Tournament {
+  id: string;
+  competition_id: string;
+  created_by: string;
+  name: string;
+  description: string;
+  event_key: string | null;
+  tournament_type: 'single' | 'double';
+  seeding_type: 'seeded' | 'unseeded';
+  match_format: 'bo3' | 'bo5';
+  scramble_source: 'generated' | 'external';
+  status: 'draft' | 'ready' | 'active' | 'completed' | 'cancelled';
+  competitor_count: number;
+  bracket_locked: boolean;
+  bracket_size: number | null;
+  shuffle_seed: number | null;
+  champion_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TournamentParticipant {
+  id: string;
+  tournament_id: string;
+  competitor_id: string;
+  display_name_snapshot: string;
+  seed: number | null;
+  qualifying_average: number | null;
+  initial_slot: number;
+  created_at: string;
+}
+
+export interface TournamentMatch {
+  id: string;
+  tournament_id: string;
+  bracket_type: 'winners' | 'losers' | 'grand_final' | 'reset_final';
+  bracket_round: number;
+  match_number: number;
+  bracket_index: number | null;
+  competitor1_id: string | null;
+  competitor2_id: string | null;
+  auto_advance: boolean;
+  competitor1_sets_won: number;
+  competitor2_sets_won: number;
+  winner_id: string | null;
+  status: 'pending' | 'active' | 'completed' | 'void';
+  next_match_id: string | null;
+  loser_next_match_id: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TournamentMatchSet {
+  id: string;
+  match_id: string;
+  set_number: number;
+  competitor1_solve_wins: number;
+  competitor2_solve_wins: number;
+  winner_id: string | null;
+  status: 'pending' | 'active' | 'completed';
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TournamentMatchSolve {
+  id: string;
+  set_id: string;
+  solve_number: number;
+  re_solve_attempt: number;
+  scramble: string | null;
+  competitor1_time_ms: number | null;
+  competitor1_penalty: 'none' | 'DNF' | '+2' | 'DNS';
+  competitor1_adjusted_ms: number | null;
+  competitor2_time_ms: number | null;
+  competitor2_penalty: 'none' | 'DNF' | '+2' | 'DNS';
+  competitor2_adjusted_ms: number | null;
+  winner_id: string | null;
+  status: 'pending' | 'active' | 'completed' | 'tied';
+  completed_at: string | null;
+  created_at: string;
+}

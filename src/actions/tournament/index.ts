@@ -1,8 +1,8 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { generateBracket, seededShuffle, type BracketInput, type BracketMatchDef } from '@/lib/tournament/bracket-engine';
-import { generateScrambles } from '@/lib/scramble';
+import { generateBracket } from '@/lib/tournament/bracket-engine';
+import type { BracketInput, BracketMatchDef } from '@/lib/tournament/bracket-engine';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
