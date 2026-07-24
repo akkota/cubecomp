@@ -65,6 +65,7 @@ interface FullSolve {
   competitor2_adjusted_ms: number | null;
   winner_id: string | null;
   status: string;
+  created_at: string | null;
 }
 
 interface FullParticipant {
@@ -325,7 +326,7 @@ export function TournamentDetailView({ competitionId, tournamentId }: DetailProp
                   />
                   <Select
                     value={c1Penalty}
-                    onValueChange={setC1Penalty}
+                    onValueChange={(v) => v !== null && setC1Penalty(v)}
                     disabled={submitting}
                   >
                     <option value="none">Normal</option>
@@ -347,7 +348,7 @@ export function TournamentDetailView({ competitionId, tournamentId }: DetailProp
                   />
                   <Select
                     value={c2Penalty}
-                    onValueChange={setC2Penalty}
+                    onValueChange={(v) => v !== null && setC2Penalty(v)}
                     disabled={submitting}
                   >
                     <option value="none">Normal</option>

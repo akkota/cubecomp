@@ -39,7 +39,7 @@ export async function createTournamentAction(
   const isAdmin = await checkAdmin(supabase, competitionId, user.id);
   if (!isAdmin) return { success: false, error: 'Not authorized' };
 
-  const { data, error } = await supabase.from('tournaments').insert({
+  const { data: insertData, error: insertError } = await supabase.from('tournaments').insert({
     competition_id: competitionId,
     created_by: user.id,
     name,
@@ -53,8 +53,8 @@ export async function createTournamentAction(
     status: 'draft',
   }).select('id').single();
 
-  if (error) return { success: false, error: error.message };
-  return { success: true, data: { id: data.id } };
+  if (insertError) return { success: false, error: insertError.message };
+  return { success: true, data: { id: insertData.id } };
 }
 
 // ─── Update Tournament Config ────────────────────────────────────────
