@@ -32,6 +32,7 @@ export default function CompetitionDetailPage() {
   const [roundParticipation, setRoundParticipation] = useState<Set<string>>(new Set());
   const [isOwner, setIsOwner] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isH2H, setH2H] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
   const [hasUnlock, setHasUnlock] = useState(false);
   const [competitorCount, setCompetitorCount] = useState(0);
@@ -47,7 +48,7 @@ export default function CompetitionDetailPage() {
 
       const { data: comp } = await supabase
         .from('competitions')
-        .select('id, created_by, name, description, status, visibility, created_at, updated_at, generate_scrambles, allow_spectators, require_verified_solves')
+        .select('id, created_by, name, description, status, visibility, competition_type, created_at, updated_at, generate_scrambles, allow_spectators, require_verified_solves')
         .eq('id', id)
         .single();
 
@@ -58,6 +59,8 @@ export default function CompetitionDetailPage() {
       setCompetition(comp);
       setIsOwner(user?.id === comp.created_by);
       setIsAdmin(user?.id === comp.created_by);
+      const isH2H = comp.competition_type === 'head_to_head';
+      setH2H(isH2H);
 
       if (user && user.id !== comp.created_by) {
         const { data: adminRow } = await supabase
@@ -214,6 +217,11 @@ export default function CompetitionDetailPage() {
                   <Globe className="h-3 w-3" /> Public
                 </Badge>
               )}
+              {isH2H && (
+                <Badge className="gap-1 bg-cube-blue/10 text-cube-blue border-cube-blue/30">
+                  <Swords className="h-3 w-3" /> Head-to-Head
+                </Badge>
+              )}
             </div>
             {competition.description && (
               <p className="mt-2 text-sm text-muted-foreground">{competition.description}</p>
@@ -256,6 +264,10 @@ export default function CompetitionDetailPage() {
         </div>
       </div>
 
+      {isH2H ? (
+        <CompetitionSection competitionId={id} />
+      ) : (
+        <>
       <Tabs defaultValue="events">
         <TabsList className="mb-6">
           <TabsTrigger value="events" className="gap-2">
@@ -358,6 +370,9 @@ export default function CompetitionDetailPage() {
           <CompetitionSection competitionId={id} />
         </TabsContent>
       </Tabs>
+        </>
+      )
+      }
 
       <Dialog open={passwordOpen} onOpenChange={setPasswordOpen}>
         <DialogContent className="sm:max-w-md">

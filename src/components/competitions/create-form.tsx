@@ -17,7 +17,7 @@ import { createClient } from '@/lib/supabase/client';
 import { configureCompetitionVisibilityAction } from '@/actions/competitionPrivacy';
 import { WCA_EVENTS, type WcaEventKey } from '@/lib/wca-events';
 import { toast } from 'sonner';
-import { ChevronRight, Trophy, ArrowLeft, Layers, ShuffleIcon, Lock, Globe } from 'lucide-react';
+import { ChevronRight, Trophy, ArrowLeft, Layers, ShuffleIcon, Lock, Globe, Swords } from 'lucide-react';
 
 const formSchema = z.object({
   name: z.string().min(3, 'Name must be at least 3 characters').max(100),
@@ -48,6 +48,7 @@ export function CreateCompetitionForm() {
   const [selectedEvents, setSelectedEvents] = useState<SelectedEvent[]>([]);
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   const [competitionPassword, setCompetitionPassword] = useState('');
+  const [competitionType, setCompetitionType] = useState<'standard' | 'head_to_head'>('standard');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const supabase = createClient();
@@ -115,12 +116,13 @@ export function CreateCompetitionForm() {
           name: data.name,
           description: data.description || '',
           created_by: user.id,
-          generate_scrambles: generateScrambles,
+          competition_type: competitionType,
+          generate_scrambles: competitionType === 'head_to_head' ? true : generateScrambles,
           allow_spectators: allowSpectators,
           require_verified_solves: requireVerified,
           visibility,
         })
-        .select('id, name, visibility')
+        .select('id, name, visibility, competition_type')
         .single();
 
       if (compError) throw compError;
@@ -179,7 +181,11 @@ export function CreateCompetitionForm() {
       }
 
       toast.success('Competition created!');
-      router.push(`/competitions/${comp.id}`);
+      if (comp.competition_type === 'head_to_head') {
+        router.push(`/competitions/${comp.id}/setup`);
+      } else {
+        router.push(`/competitions/${comp.id}`);
+      }
       router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to create competition');
@@ -207,6 +213,41 @@ export function CreateCompetitionForm() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-3 rounded-lg border border-border p-4">
+              <Label className="flex items-center gap-2 text-sm font-medium">
+                <Trophy className="h-4 w-4 text-cube-blue" />
+                Competition Type
+              </Label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCompetitionType('standard')}
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
+                    competitionType === 'standard'
+                      ? 'border-cube-blue/40 bg-cube-blue/10 text-foreground'
+                      : 'border-border text-muted-foreground hover:bg-accent/40'
+                  }`}
+                >
+                  <Layers className="h-4 w-4" /> Standard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCompetitionType('head_to_head')}
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
+                    competitionType === 'head_to_head'
+                      ? 'border-cube-blue/40 bg-cube-blue/10 text-foreground'
+                      : 'border-border text-muted-foreground hover:bg-accent/40'
+                  }`}
+                >
+                  <Swords className="h-4 w-4" /> Head-to-Head
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {competitionType === 'standard'
+                  ? 'WCA-format with multi-round events, leaderboards, and advancement.'
+                  : 'Bracket tournament with single/double elimination, best-of-3/5 sets, and head-to-head matches.'}
+              </p>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="name">Competition Name *</Label>
               <Input id="name" placeholder="e.g. CubeComp Summer 2026" {...form.register('name')} className="h-10" />
@@ -304,13 +345,14 @@ export function CreateCompetitionForm() {
           </CardContent>
         </Card>
 
+        {competitionType === 'standard' && (<>
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Layers className="h-5 w-5 text-cube-green" />
               Events
             </CardTitle>
-            <CardDescription>Select the official WCA events for this competition. You&apos;ll choose Mo3 or Ao5 for each next.</CardDescription>
+            <CardDescription>Select the official WCA events for this competition.</CardDescription>
           </CardHeader>
           <CardContent>
             {selectedEvents.length > 0 && (
@@ -436,6 +478,8 @@ export function CreateCompetitionForm() {
               })}
             </CardContent>
           </Card>
+        )}
+        </>
         )}
 
         <div className="flex justify-end">

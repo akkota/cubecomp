@@ -13,7 +13,7 @@ import { RotatingCube } from '@/components/cube/rotating-cube';
 import type { Competition } from '@/types/database';
 import {
   ArrowRight, Trophy, Layers, Timer, BarChart3,
-  Calendar, Sparkles, Zap, Search, Clock, CheckCircle2, Play, Lock
+  Calendar, Sparkles, Zap, Search, Clock, CheckCircle2, Play, Lock, Swords
 } from 'lucide-react';
 
 const STATUS_UI: Record<string, { variant: 'default'|'destructive'|'secondary'|'outline'; label: string; icon: any }> = {
@@ -208,6 +208,11 @@ export default function HomePage() {
                               {comp.visibility === 'private' && (
                                 <Badge variant="outline" className="gap-1 border-cube-orange/40 text-cube-orange">
                                   <Lock className="h-3 w-3" /> Private
+                                </Badge>
+                              )}
+                              {comp.competition_type === 'head_to_head' && (
+                                <Badge variant="outline" className="gap-1 border-cube-blue/40 text-cube-blue">
+                                  <Swords className="h-3 w-3" /> H2H
                                 </Badge>
                               )}
                             </div>

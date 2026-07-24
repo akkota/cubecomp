@@ -20,6 +20,7 @@ export interface Competition {
   description: string;
   status: 'upcoming' | 'ongoing' | 'completed' | 'cancelled';
   visibility: 'public' | 'private';
+  competition_type: 'standard' | 'head_to_head';
   generate_scrambles: boolean;
   allow_spectators: boolean;
   require_verified_solves: boolean;
