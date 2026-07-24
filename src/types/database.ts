@@ -163,6 +163,8 @@ export interface TournamentMatch {
   status: 'pending' | 'active' | 'completed' | 'void';
   next_match_id: string | null;
   loser_next_match_id: string | null;
+  next_match_slot: 1 | 2 | null;
+  loser_next_match_slot: 1 | 2 | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;

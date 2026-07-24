@@ -2,12 +2,8 @@
  * Bracket Engine — Pure algorithm for generating single/double elimination brackets.
  * Uses standard tournament seeding where seeds are placed in balanced halves.
  *
- * WR1 pairings: (Q1[i], Q4[qs-1-i]), (Q2[qs-1-i], Q3[i])
- *   where Q1..Q4 are the 4 bracketsize/4-sized quarters of the seed-positions array
- *   and qs = bracketsize/4.
- * This ensures seeds 1 and 2 are in opposite WR2 groups, etc.
- *
- * Verified for N=2..32 single/double elimination.
+ * Destination slots (1|2) are explicit so winner/loser routing never depends on
+ * arrival order (critical for losers-bracket and rematch-safe advancement).
  */
 
 export type BracketType = 'winners' | 'losers' | 'grand_final' | 'reset_final';
@@ -22,7 +18,11 @@ export interface BracketMatchDef {
   slot2Seed: number | null;
   isBye: boolean;
   nextMatchIndex: number | null;
+  /** 1 or 2 — which competitor slot in next_match receives the winner */
+  nextMatchSlot: 1 | 2 | null;
   loserNextMatchIndex: number | null;
+  /** 1 or 2 — which competitor slot receives the loser (double elim) */
+  loserNextMatchSlot: 1 | 2 | null;
   bracketIndex: number;
 }
 
@@ -74,7 +74,6 @@ function seedAt(p: number, pts: (number | null)[], pc: number): number | null {
 function generateWR1Pairs(pc: number, bs: number): Array<[number | null, number | null]> {
   const k = Math.log2(bs);
   if (k < 2) {
-    // k=0 (1 player) or k=1 (2 players): simple single match
     if (k === 0) return [];
     const P = seedPositions(1);
     const pts = buildPosToSeed(P, bs);
@@ -82,17 +81,14 @@ function generateWR1Pairs(pc: number, bs: number): Array<[number | null, number 
   }
   const P = seedPositions(k);
   const pts = buildPosToSeed(P, bs);
-  const qs = bs / 4; // quarter size
+  const qs = bs / 4;
   const pairs: Array<[number | null, number | null]> = [];
 
-  // Split P into quarters
   const Q1 = P.slice(0, qs);
   const Q2 = P.slice(qs, 2 * qs);
   const Q3 = P.slice(2 * qs, 3 * qs);
   const Q4 = P.slice(3 * qs);
 
-  // Correct quarter-to-quarter cross formula with alternating i-order:
-  // i_order = [0, qs-1, 1, qs-2, 2, ...] to ensure proper WR2→WR3 grouping
   const iOrder: number[] = [];
   for (let a = 0, b = qs - 1; a <= b; a++, b--) {
     iOrder.push(a);
@@ -111,6 +107,10 @@ function generateWR1Pairs(pc: number, bs: number): Array<[number | null, number 
   return pairs;
 }
 
+function pairSlot(i: number): 1 | 2 {
+  return i % 2 === 0 ? 1 : 2;
+}
+
 // ─── Single Elimination ──────────────────────────────────────────────
 
 function generateSingleElim(pc: number, bs: number): BracketMatchDef[] {
@@ -121,18 +121,17 @@ function generateSingleElim(pc: number, bs: number): BracketMatchDef[] {
   const wr1c = bs / 2;
   let idx = 0;
 
-  // WR1
   for (const [s1, s2] of wr1Pairs) {
     matches.push({
       bracketType: 'winners', bracketRound: 1, matchNumber: idx + 1,
       slot1Seed: s1, slot2Seed: s2, isBye: s1 === null || s2 === null,
       nextMatchIndex: k > 1 ? wr1c + Math.floor(idx / 2) : null,
-      loserNextMatchIndex: null, bracketIndex: idx,
+      nextMatchSlot: k > 1 ? pairSlot(idx) : null,
+      loserNextMatchIndex: null, loserNextMatchSlot: null, bracketIndex: idx,
     });
     idx++;
   }
 
-  // WR rounds 2..k
   for (let r = 2; r <= k; r++) {
     const mc = bs >> r;
     const rs = matches.length;
@@ -141,7 +140,8 @@ function generateSingleElim(pc: number, bs: number): BracketMatchDef[] {
         bracketType: 'winners', bracketRound: r, matchNumber: i + 1,
         slot1Seed: null, slot2Seed: null, isBye: false,
         nextMatchIndex: r === k ? null : rs + mc + Math.floor(i / 2),
-        loserNextMatchIndex: null, bracketIndex: idx++,
+        nextMatchSlot: r === k ? null : pairSlot(i),
+        loserNextMatchIndex: null, loserNextMatchSlot: null, bracketIndex: idx++,
       });
     }
   }
@@ -171,89 +171,126 @@ function generateDoubleElim(pc: number, bs: number): BracketMatchDef[] {
     return i;
   }
 
-  // WR1
   const wr1Pairs = generateWR1Pairs(pc, bs);
   for (const [s1, s2] of wr1Pairs) {
     M.push({
       bracketType: 'winners', bracketRound: 1, matchNumber: M.length + 1,
       slot1Seed: s1, slot2Seed: s2, isBye: s1 === null || s2 === null,
-      nextMatchIndex: -1, loserNextMatchIndex: -1, bracketIndex: idx++,
+      nextMatchIndex: -1, nextMatchSlot: null,
+      loserNextMatchIndex: -1, loserNextMatchSlot: null, bracketIndex: idx++,
     });
   }
 
-  // WR2..WRk
   for (let r = 2; r <= k; r++) {
     const mc = bs >> r;
     for (let i = 0; i < mc; i++) {
       M.push({
         bracketType: 'winners', bracketRound: r, matchNumber: i + 1,
         slot1Seed: null, slot2Seed: null, isBye: false,
-        nextMatchIndex: -1, loserNextMatchIndex: -1, bracketIndex: idx++,
+        nextMatchIndex: -1, nextMatchSlot: null,
+        loserNextMatchIndex: -1, loserNextMatchSlot: null, bracketIndex: idx++,
       });
     }
   }
 
-  // LB rounds
   for (let r = 1; r <= lbRc; r++) {
     const c = lbMC(r);
     for (let i = 0; i < c; i++) {
       M.push({
         bracketType: 'losers', bracketRound: r, matchNumber: i + 1,
         slot1Seed: null, slot2Seed: null, isBye: false,
-        nextMatchIndex: -1, loserNextMatchIndex: -1, bracketIndex: idx++,
+        nextMatchIndex: -1, nextMatchSlot: null,
+        loserNextMatchIndex: -1, loserNextMatchSlot: null, bracketIndex: idx++,
       });
     }
   }
 
-  // Grand Final + reset placeholder
   const gfI = M.length;
-  M.push({ bracketType: 'grand_final', bracketRound: 1, matchNumber: 1,
+  M.push({
+    bracketType: 'grand_final', bracketRound: 1, matchNumber: 1,
     slot1Seed: null, slot2Seed: null, isBye: false,
-    nextMatchIndex: null, loserNextMatchIndex: null, bracketIndex: idx++ });
-  const rsI = M.length;
-  M.push({ bracketType: 'reset_final', bracketRound: 1, matchNumber: 1,
+    // Points at reset_final so LB champion can force a bracket reset
+    nextMatchIndex: gfI + 1, nextMatchSlot: null,
+    loserNextMatchIndex: null, loserNextMatchSlot: null, bracketIndex: idx++,
+  });
+  M.push({
+    bracketType: 'reset_final', bracketRound: 1, matchNumber: 1,
     slot1Seed: null, slot2Seed: null, isBye: false,
-    nextMatchIndex: null, loserNextMatchIndex: null, bracketIndex: idx++ });
+    nextMatchIndex: null, nextMatchSlot: null,
+    loserNextMatchIndex: null, loserNextMatchSlot: null, bracketIndex: idx++,
+  });
 
-  // Link WR winner feeds
+  // WR winner feeds
   const w2s = wr1c;
-  for (let i = 0; i < wr1c; i++) M[i].nextMatchIndex = w2s + Math.floor(i / 2);
+  for (let i = 0; i < wr1c; i++) {
+    M[i].nextMatchIndex = w2s + Math.floor(i / 2);
+    M[i].nextMatchSlot = pairSlot(i);
+  }
   let wrS = wr1c;
   for (let r = 2; r < k; r++) {
     const mc = bs >> r;
     const nx = wrS + mc;
-    for (let i = 0; i < mc; i++) M[wrS + i].nextMatchIndex = nx + Math.floor(i / 2);
+    for (let i = 0; i < mc; i++) {
+      M[wrS + i].nextMatchIndex = nx + Math.floor(i / 2);
+      M[wrS + i].nextMatchSlot = pairSlot(i);
+    }
     wrS = nx;
   }
+  // Winners final → grand final slot 1 (WB champion)
   M[wrT - 1].nextMatchIndex = gfI;
+  M[wrT - 1].nextMatchSlot = 1;
 
-  // Link WR loser feeds
+  // WR loser feeds
   const l1s = lbRS(1);
-  for (let i = 0; i < wr1c; i++) M[i].loserNextMatchIndex = l1s + Math.floor(i / 2);
+  for (let i = 0; i < wr1c; i++) {
+    if (M[i].isBye) {
+      // Bye matches have no loser to drop into the losers bracket
+      M[i].loserNextMatchIndex = null;
+      M[i].loserNextMatchSlot = null;
+    } else {
+      M[i].loserNextMatchIndex = l1s + Math.floor(i / 2);
+      M[i].loserNextMatchSlot = pairSlot(i);
+    }
+  }
   wrS = wr1c;
   for (let r = 2; r < k; r++) {
     const mc = bs >> r;
     const lt = 2 * r - 2;
     if (lt >= 1 && lt <= lbRc) {
       const ls = lbRS(lt);
-      for (let i = 0; i < mc; i++) M[wrS + i].loserNextMatchIndex = ls + i;
+      for (let i = 0; i < mc; i++) {
+        // WB drop-ins occupy slot 1; LB survivors occupy slot 2
+        M[wrS + i].loserNextMatchIndex = ls + i;
+        M[wrS + i].loserNextMatchSlot = 1;
+      }
     }
     wrS += mc;
   }
   M[wrT - 1].loserNextMatchIndex = lbRS(lbRc);
+  M[wrT - 1].loserNextMatchSlot = 1;
 
-  // Link LB winner feeds
+  // LB winner feeds
   for (let r = 1; r <= lbRc; r++) {
     const rs = lbRS(r), c = lbMC(r);
     for (let i = 0; i < c; i++) {
       const mi = rs + i;
       if (r < lbRc) {
         const ns = lbRS(r + 1);
-        M[mi].nextMatchIndex = r % 2 === 1 ? ns + i : ns + Math.floor(i / 2);
+        if (r % 2 === 1) {
+          // Odd LB → even LB: 1:1 into slot 2 (WB drop uses slot 1)
+          M[mi].nextMatchIndex = ns + i;
+          M[mi].nextMatchSlot = 2;
+        } else {
+          M[mi].nextMatchIndex = ns + Math.floor(i / 2);
+          M[mi].nextMatchSlot = pairSlot(i);
+        }
       } else {
+        // Losers final → grand final slot 2
         M[mi].nextMatchIndex = gfI;
+        M[mi].nextMatchSlot = 2;
       }
       M[mi].loserNextMatchIndex = null;
+      M[mi].loserNextMatchSlot = null;
     }
   }
 
