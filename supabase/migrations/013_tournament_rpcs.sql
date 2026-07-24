@@ -231,11 +231,30 @@ BEGIN
       IF v_match.next_match_id IS NULL AND v_match.bracket_type IN ('grand_final', 'reset_final') THEN
         UPDATE tournaments SET status = 'completed', champion_id = v_match.winner_id
         WHERE id = p_tournament_id;
-      ELSIF v_match.bracket_type = 'grand_final' AND v_match.winner_id != (
-        SELECT competitor1_id FROM tournament_matches WHERE id = p_match_id  -- WR champion
-      ) THEN
-        -- LB champion won: create reset final
-        -- (handled by server action, not here)
+      ELSIF v_match.bracket_type = 'grand_final' THEN
+        -- Find WBF champion (competitor1 in grand_final comes from WBF)
+        -- If LB champion (competitor2) won, create reset final
+        DECLARE
+          v_gf RECORD;
+          v_tourn RECORD;
+        BEGIN
+          SELECT * INTO v_gf FROM tournament_matches WHERE id = p_match_id;
+          -- In grand_final, competitor1 is WBF winner, competitor2 is LBF winner
+          IF v_gf.winner_id = v_gf.competitor2_id THEN
+            -- LB champion won — create reset final
+            SELECT * INTO v_tourn FROM tournaments WHERE id = p_tournament_id;
+            INSERT INTO tournament_matches
+              (tournament_id, bracket_type, bracket_round, match_number,
+               competitor1_id, competitor2_id, status)
+            VALUES
+              (p_tournament_id, 'reset_final', 1, 1,
+               v_gf.competitor1_id, v_gf.competitor2_id, 'active')
+            RETURNING id INTO v_match.id;
+            -- Create first set for reset final
+            INSERT INTO tournament_match_sets (match_id, set_number, status)
+            VALUES (v_match.id, 1, 'active');
+          END IF;
+        END;
       END IF;
     ELSE
       -- Next set
@@ -414,3 +433,326 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.generate_tournament_bracket FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.generate_tournament_bracket TO authenticated;
+
+-- ============================================================
+-- UNDO LAST SOLVE (safe, uses completed_at ordering)
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.undo_tournament_solve(
+  p_tournament_id UUID,
+  p_solve_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_solve RECORD;
+  v_set RECORD;
+  v_match RECORD;
+  v_later_exists INT;
+  v_downstream_exists INT;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Not authenticated');
+  END IF;
+  IF NOT public.user_is_tournament_admin(p_tournament_id) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Not authorized');
+  END IF;
+
+  -- Lock and fetch solve
+  SELECT s.* INTO v_solve FROM tournament_match_solves s
+    JOIN tournament_match_sets ts ON ts.id = s.set_id
+    JOIN tournament_matches tm ON tm.id = ts.match_id
+    WHERE s.id = p_solve_id AND tm.tournament_id = p_tournament_id
+    FOR UPDATE OF s;
+
+  IF NOT FOUND THEN RETURN jsonb_build_object('success', false, 'error', 'Solve not found'); END IF;
+  IF v_solve.status != 'completed' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Solve is not completed');
+  END IF;
+
+  -- Check for later solves in same match or downstream matches
+  SELECT COUNT(*) INTO v_later_exists
+  FROM tournament_match_solves
+  WHERE set_id IN (
+    SELECT id FROM tournament_match_sets WHERE match_id IN (
+      SELECT id FROM tournament_matches WHERE tournament_id = p_tournament_id
+    )
+  )
+  AND completed_at IS NOT NULL
+  AND completed_at > v_solve.completed_at;
+
+  IF v_later_exists > 0 THEN
+    RETURN jsonb_build_object('success', false, 'error',
+      'Cannot undo: a later solve depends on this result');
+  END IF;
+
+  -- Get set and match info
+  SELECT * INTO v_set FROM tournament_match_sets WHERE id = v_solve.set_id;
+  SELECT * INTO v_match FROM tournament_matches WHERE id = v_set.match_id;
+
+  -- Undo solve
+  UPDATE tournament_match_solves SET
+    competitor1_time_ms = NULL, competitor1_penalty = 'none',
+    competitor1_adjusted_ms = NULL,
+    competitor2_time_ms = NULL, competitor2_penalty = 'none',
+    competitor2_adjusted_ms = NULL,
+    winner_id = NULL, status = 'pending', completed_at = NULL
+  WHERE id = p_solve_id;
+
+  -- Revert set
+  IF v_solve.winner_id IS NOT NULL THEN
+    IF v_solve.winner_id = v_match.competitor1_id THEN
+      UPDATE tournament_match_sets SET competitor1_solve_wins = GREATEST(0, competitor1_solve_wins - 1)
+      WHERE id = v_solve.set_id;
+    ELSE
+      UPDATE tournament_match_sets SET competitor2_solve_wins = GREATEST(0, competitor2_solve_wins - 1)
+      WHERE id = v_solve.set_id;
+    END IF;
+  END IF;
+
+  -- If set was completed by this solve, revert set completion
+  IF v_set.status = 'completed' AND v_set.completed_at IS NOT NULL
+     AND (v_set.completed_at = v_solve.completed_at OR v_set.completed_at > v_solve.completed_at - interval '1 second')
+     AND v_set.completed_at < v_solve.completed_at + interval '1 second' THEN
+    UPDATE tournament_match_sets SET
+      status = 'active', winner_id = NULL, completed_at = NULL
+    WHERE id = v_solve.set_id;
+
+    -- Revert match set won
+    IF v_set.winner_id IS NOT NULL THEN
+      IF v_set.winner_id = v_match.competitor1_id THEN
+        UPDATE tournament_matches SET competitor1_sets_won = GREATEST(0, competitor1_sets_won - 1)
+        WHERE id = v_set.match_id;
+      ELSE
+        UPDATE tournament_matches SET competitor2_sets_won = GREATEST(0, competitor2_sets_won - 1)
+        WHERE id = v_set.match_id;
+      END IF;
+    END IF;
+
+    -- If match was completed by this set, revert match completion
+    IF v_match.status = 'completed' AND v_match.completed_at IS NOT NULL
+       AND v_match.completed_at > v_solve.completed_at - interval '1 second' THEN
+      UPDATE tournament_matches SET
+        status = 'active', winner_id = NULL, completed_at = NULL
+      WHERE id = v_set.match_id;
+
+      -- Revert tournament champion
+      UPDATE tournaments SET status = 'active', champion_id = NULL
+      WHERE id = p_tournament_id AND champion_id IS NOT NULL;
+    END IF;
+  END IF;
+
+  INSERT INTO tournament_audit_log
+    (tournament_id, action, actor_id, target_type, target_id, reason, metadata)
+  VALUES (p_tournament_id, 'undo_solve', auth.uid(), 'solve', p_solve_id,
+          'Undo last solve', jsonb_build_object('solve_number', v_solve.solve_number));
+
+  RETURN jsonb_build_object('success', true, 'status', 'reverted');
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.undo_tournament_solve FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.undo_tournament_solve TO authenticated;
+
+-- ============================================================
+-- RE-SOLVE TIED SOLVE (exactly one active retry)
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.re_solve_tournament_tie(
+  p_tournament_id UUID,
+  p_solve_id UUID,
+  p_scramble TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_solve RECORD;
+  v_set RECORD;
+  v_match RECORD;
+  v_new_attempt INT;
+  v_max_attempt INT;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Not authenticated');
+  END IF;
+  IF NOT public.user_is_tournament_admin(p_tournament_id) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Not authorized');
+  END IF;
+
+  SELECT * INTO v_solve FROM tournament_match_solves WHERE id = p_solve_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('success', false, 'error', 'Solve not found'); END IF;
+  IF v_solve.status != 'tied' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Solve is not tied');
+  END IF;
+
+  SELECT * INTO v_set FROM tournament_match_sets WHERE id = v_solve.set_id;
+  SELECT * INTO v_match FROM tournament_matches WHERE id = v_set.match_id;
+
+  -- Get current max attempt
+  SELECT COALESCE(MAX(re_solve_attempt), -1) INTO v_max_attempt
+  FROM tournament_match_solves
+  WHERE set_id = v_solve.set_id AND solve_number = v_solve.solve_number;
+
+  -- Prevent duplicate retries: if max_attempt > current, a newer exists
+  IF v_max_attempt > v_solve.re_solve_attempt THEN
+    RETURN jsonb_build_object('success', false, 'error', 'A newer re-solve already exists for this position');
+  END IF;
+
+  v_new_attempt := v_max_attempt + 1;
+
+  INSERT INTO tournament_match_solves
+    (set_id, solve_number, re_solve_attempt, scramble, status)
+  VALUES (v_solve.set_id, v_solve.solve_number, v_new_attempt, p_scramble, 'active')
+  RETURNING id INTO v_solve.id;
+
+  RETURN jsonb_build_object('success', true, 'solve_id', v_solve.id, 're_solve_attempt', v_new_attempt);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.re_solve_tournament_tie FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.re_solve_tournament_tie TO authenticated;
+
+-- ============================================================
+-- UNDO LAST SOLVE (safe, uses completed_at ordering)
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.undo_tournament_solve(
+  p_tournament_id UUID,
+  p_solve_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_solve RECORD;
+  v_set RECORD;
+  v_match RECORD;
+  v_later_exists INT;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Not authenticated');
+  END IF;
+  IF NOT public.user_is_tournament_admin(p_tournament_id) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Not authorized');
+  END IF;
+
+  SELECT s.* INTO v_solve FROM tournament_match_solves s
+    JOIN tournament_match_sets ts ON ts.id = s.set_id
+    JOIN tournament_matches tm ON tm.id = ts.match_id
+    WHERE s.id = p_solve_id AND tm.tournament_id = p_tournament_id
+    FOR UPDATE OF s;
+
+  IF NOT FOUND THEN RETURN jsonb_build_object('success', false, 'error', 'Solve not found'); END IF;
+  IF v_solve.status != 'completed' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Solve is not completed');
+  END IF;
+
+  SELECT COUNT(*) INTO v_later_exists
+  FROM tournament_match_solves
+  WHERE set_id IN (
+    SELECT id FROM tournament_match_sets WHERE match_id IN (
+      SELECT id FROM tournament_matches WHERE tournament_id = p_tournament_id
+    )
+  )
+  AND completed_at IS NOT NULL
+  AND completed_at > v_solve.completed_at;
+
+  IF v_later_exists > 0 THEN
+    RETURN jsonb_build_object('success', false, 'error',
+      'Cannot undo: a later solve depends on this result');
+  END IF;
+
+  SELECT * INTO v_set FROM tournament_match_sets WHERE id = v_solve.set_id;
+  SELECT * INTO v_match FROM tournament_matches WHERE id = v_set.match_id;
+
+  UPDATE tournament_match_solves SET
+    competitor1_time_ms = NULL, competitor1_penalty = 'none',
+    competitor1_adjusted_ms = NULL,
+    competitor2_time_ms = NULL, competitor2_penalty = 'none',
+    competitor2_adjusted_ms = NULL,
+    winner_id = NULL, status = 'pending', completed_at = NULL
+  WHERE id = p_solve_id;
+
+  IF v_solve.winner_id IS NOT NULL THEN
+    IF v_solve.winner_id = v_match.competitor1_id THEN
+      UPDATE tournament_match_sets SET competitor1_solve_wins = GREATEST(0, competitor1_solve_wins - 1)
+      WHERE id = v_solve.set_id;
+    ELSE
+      UPDATE tournament_match_sets SET competitor2_solve_wins = GREATEST(0, competitor2_solve_wins - 1)
+      WHERE id = v_solve.set_id;
+    END IF;
+  END IF;
+
+  INSERT INTO tournament_audit_log
+    (tournament_id, action, actor_id, target_type, target_id, reason, metadata)
+  VALUES (p_tournament_id, 'undo_solve', auth.uid(), 'solve', p_solve_id,
+          'Undo last solve', jsonb_build_object('solve_number', v_solve.solve_number));
+
+  RETURN jsonb_build_object('success', true);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.undo_tournament_solve FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.undo_tournament_solve TO authenticated;
+
+-- ============================================================
+-- RE-SOLVE TIE
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.re_solve_tournament_tie(
+  p_tournament_id UUID,
+  p_solve_id UUID,
+  p_scramble TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_solve RECORD;
+  v_set RECORD;
+  v_match RECORD;
+  v_new_attempt INT;
+  v_max_attempt INT;
+  v_new_id UUID;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Not authenticated');
+  END IF;
+  IF NOT public.user_is_tournament_admin(p_tournament_id) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Not authorized');
+  END IF;
+
+  SELECT * INTO v_solve FROM tournament_match_solves WHERE id = p_solve_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('success', false, 'error', 'Solve not found'); END IF;
+  IF v_solve.status != 'tied' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Solve is not tied');
+  END IF;
+
+  SELECT COALESCE(MAX(re_solve_attempt), -1) INTO v_max_attempt
+  FROM tournament_match_solves
+  WHERE set_id = v_solve.set_id AND solve_number = v_solve.solve_number;
+
+  IF v_max_attempt > v_solve.re_solve_attempt THEN
+    RETURN jsonb_build_object('success', false, 'error', 'A newer re-solve already exists');
+  END IF;
+
+  v_new_attempt := v_max_attempt + 1;
+
+  INSERT INTO tournament_match_solves
+    (set_id, solve_number, re_solve_attempt, scramble, status)
+  VALUES (v_solve.set_id, v_solve.solve_number, v_new_attempt, p_scramble, 'active')
+  RETURNING id INTO v_new_id;
+
+  RETURN jsonb_build_object('success', true, 'solve_id', v_new_id,
+    're_solve_attempt', v_new_attempt, 'scramble', p_scramble);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.re_solve_tournament_tie FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.re_solve_tournament_tie TO authenticated;
