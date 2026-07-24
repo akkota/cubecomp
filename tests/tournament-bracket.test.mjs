@@ -58,10 +58,13 @@ test('seeded 8: correct WR1 seed pairings', () => {
   // The seeds at those positions: 1,2,3,4,5,6,7,8
   assert.deepEqual(wr1.map(m => [m.slot1Seed, m.slot2Seed]), [
     [1, 8],
+    [4, 5],
     [2, 7],
     [3, 6],
-    [4, 5],
   ]);
+  // Quarter-cross formula ensures seeds 1+2 in opposite halves
+  assert.ok([wr1[0],wr1[1]].flatMap(m=>[m.slot1Seed,m.slot2Seed]).includes(1));
+  assert.ok([wr1[2],wr1[3]].flatMap(m=>[m.slot1Seed,m.slot2Seed]).includes(2));
 });
 
 test('seeded 4: correct WR1 seed pairings', () => {
@@ -84,15 +87,21 @@ test('seeded 16: correct WR1 seed pairings', () => {
   // Wait, correct mapping: pts[1]=1, pts[16]=2, pts[8]=8, pts[9]=9, pts[4]=3, pts[13]=4,
   // pts[5]=5, pts[12]=12, pts[2]=13, pts[15]=14, pts[7]=6, pts[10]=7, pts[3]=10, pts[14]=11, pts[6]=15, pts[11]=16
   assert.deepEqual(wr1.map(m => [m.slot1Seed, m.slot2Seed]), [
-    [1, 16],  // P[0]=1 vs P[15]=11 → seeds 1,16
-    [2, 15],  // P[1]=16 vs P[14]=6 → seeds 2,15
-    [3, 14],  // P[2]=8 vs P[13]=14 → seeds 3,14
-    [4, 13],  // P[3]=9 vs P[12]=3 → seeds 4,13
-    [5, 12],  // P[4]=4 vs P[11]=10 → seeds 5,12
-    [6, 11],  // P[5]=13 vs P[10]=7 → seeds 6,11
-    [7, 10],  // P[6]=5 vs P[9]=15 → seeds 7,10
-    [8, 9],   // P[7]=12 vs P[8]=2 → seeds 8,9
+    [1, 16],
+    [8, 9],
+    [4, 13],
+    [5, 12],
+    [2, 15],
+    [7, 10],
+    [3, 14],
+    [6, 11],
   ]);
+  // Verify seeds 1+2 opposite, 3+4 opposite
+  const groups = [[wr1[0],wr1[1]],[wr1[2],wr1[3]],[wr1[4],wr1[5]],[wr1[6],wr1[7]]];
+  assert.ok(groups[0].flatMap(m=>[m.slot1Seed,m.slot2Seed]).includes(1));
+  assert.ok(groups[2].flatMap(m=>[m.slot1Seed,m.slot2Seed]).includes(2));
+  assert.ok(groups[3].flatMap(m=>[m.slot1Seed,m.slot2Seed]).includes(3));
+  assert.ok(groups[1].flatMap(m=>[m.slot1Seed,m.slot2Seed]).includes(4));
 });
 
 // ─── Single Elimination Topology ─────────────────────────────────────
@@ -151,9 +160,9 @@ test('byes: N=5 in 8 — correct bye assignment', () => {
   //             (3,4): both ≤5 → no bye
   //             (5,6): seed6 >5 → bye
   //             (7,8): both >5 → bye
-  assert.deepEqual(wr1.map(m => m.isBye), [true, true, true, false]);
-  assert.equal(wr1[3].slot1Seed, 4);
-  assert.equal(wr1[3].slot2Seed, 5);
+  assert.deepEqual(wr1.map(m => m.isBye), [true, false, true, true]);
+  assert.equal(wr1[1].slot1Seed, 4);
+  assert.equal(wr1[1].slot2Seed, 5);
 });
 
 test('byes: N=3 in 4 — correct bye assignment', () => {
@@ -295,7 +304,7 @@ test('unseeded: preserves all elements', () => {
 
 test('byeMatchIndices: N=5 in 8', () => {
   const bi = byeMatchIndices(5, 8);
-  assert.deepEqual(bi, [0, 1, 2]);
+  assert.deepEqual(bi, [0, 2, 3]);
 });
 
 test('byeMatchIndices: N=8 in 8 yields 0 byes', () => {
