@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { createClient } from '@/lib/supabase/client';
-import { deriveCompetitionStatus } from '@/lib/competition-status';
+import { deriveCompetitionStatus, competitionRegistrationOpen } from '@/lib/competition-status';
 import { registerForCompetitionAction, checkCompetitionUnlockAction } from '@/actions/competitionPrivacy';
 import { WCA_EVENTS } from '@/lib/wca-events';
 import { toast } from 'sonner';
@@ -50,7 +50,7 @@ export default function CompetitionDetailPage() {
 
       const { data: comp } = await supabase
         .from('competitions')
-        .select('id, created_by, name, description, status, visibility, competition_type, created_at, updated_at, generate_scrambles, allow_spectators, require_verified_solves')
+        .select('id, created_by, name, description, status, visibility, competition_type, created_at, updated_at, generate_scrambles, allow_spectators, require_verified_solves, starts_at, ends_at')
         .eq('id', id)
         .single();
 
@@ -187,8 +187,18 @@ export default function CompetitionDetailPage() {
   const displayStatus = deriveCompetitionStatus(rounds, {
     competitionType: competition.competition_type,
     tournamentStatuses,
+    status: competition.status,
+    startsAt: competition.starts_at,
+    endsAt: competition.ends_at,
   });
-  const registrationOpen = displayStatus !== 'completed' && !registrationLocked;
+  const registrationOpen = competitionRegistrationOpen({
+    status: competition.status,
+    competitionType: competition.competition_type,
+    startsAt: competition.starts_at,
+    endsAt: competition.ends_at,
+    rounds,
+    tournamentStatuses,
+  });
   const isPrivate = competition.visibility === 'private';
 
   const getRoundAccess = (round: any): { clickable: boolean; badge: { label: string; variant: string } } => {
@@ -234,7 +244,9 @@ export default function CompetitionDetailPage() {
                 displayStatus === 'ongoing' ? 'destructive' :
                 'secondary'
               } className="shrink-0">
-                {displayStatus === 'upcoming' ? 'Upcoming' : displayStatus === 'ongoing' ? 'Live' : 'Completed'}
+                {displayStatus === 'upcoming' ? 'Upcoming' :
+                  displayStatus === 'ongoing' ? 'Live' :
+                  displayStatus === 'cancelled' ? 'Cancelled' : 'Completed'}
               </Badge>
               {isPrivate ? (
                 <Badge variant="outline" className="gap-1 border-cube-orange/40 text-cube-orange">

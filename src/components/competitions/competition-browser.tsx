@@ -18,6 +18,7 @@ const STATUS_UI: Record<string, { variant: 'default' | 'destructive' | 'secondar
   upcoming: { variant: 'default', label: 'Upcoming', icon: Clock },
   ongoing: { variant: 'destructive', label: 'Live', icon: Play },
   completed: { variant: 'secondary', label: 'Completed', icon: CheckCircle2 },
+  cancelled: { variant: 'secondary', label: 'Cancelled', icon: CheckCircle2 },
 };
 
 type CompWithStatus = Competition & {
@@ -71,6 +72,9 @@ async function loadCompetitions(supabase: ReturnType<typeof createClient>): Prom
     displayStatus: deriveCompetitionStatus(roundsByComp.get(c.id) ?? [], {
       competitionType: c.competition_type,
       tournamentStatuses: tournamentsByComp.get(c.id) ?? [],
+      status: c.status,
+      startsAt: c.starts_at,
+      endsAt: c.ends_at,
     }),
   }));
 }
@@ -85,7 +89,7 @@ export function CompetitionBrowser({
   const [competitions, setCompetitions] = useState<CompWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | CompetitionDisplayStatus>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'upcoming' | 'ongoing' | 'completed'>('all');
   useEffect(() => {
     const client = createClient();
     void loadCompetitions(client).then(list => {
@@ -105,7 +109,12 @@ export function CompetitionBrowser({
       );
     }
     if (activeTab !== 'all') {
-      list = list.filter(c => c.displayStatus === activeTab);
+      list = list.filter(c => {
+        if (activeTab === 'completed') {
+          return c.displayStatus === 'completed' || c.displayStatus === 'cancelled';
+        }
+        return c.displayStatus === activeTab;
+      });
     }
     return list;
   }, [competitions, search, activeTab]);
@@ -114,7 +123,7 @@ export function CompetitionBrowser({
     all: competitions.length,
     upcoming: competitions.filter(c => c.displayStatus === 'upcoming').length,
     ongoing: competitions.filter(c => c.displayStatus === 'ongoing').length,
-    completed: competitions.filter(c => c.displayStatus === 'completed').length,
+    completed: competitions.filter(c => c.displayStatus === 'completed' || c.displayStatus === 'cancelled').length,
   }), [competitions]);
 
   return (

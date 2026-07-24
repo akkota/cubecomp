@@ -260,9 +260,27 @@ export default function CompetitionAdminPage() {
   };
 
   const syncCompStatus = async (rounds: any[]) => {
-    const status = deriveCompetitionStatus(rounds);
-    await supabase.from("competitions").update({ status }).eq("id", id);
-    setCompetition((prev: any) => (prev ? { ...prev, status } : prev));
+    const { data: eff } = await supabase.rpc("refresh_competition_status", { comp_id: id });
+    const status =
+      (typeof eff === "string" && eff) ||
+      deriveCompetitionStatus(rounds, {
+        status: competition?.status,
+        startsAt: competition?.starts_at,
+        endsAt: competition?.ends_at,
+        competitionType: competition?.competition_type,
+      });
+    setCompetition((prev: any) =>
+      prev
+        ? {
+            ...prev,
+            status: status === "cancelled" ? "cancelled" : status,
+            ends_at:
+              status === "completed" && !prev.ends_at
+                ? new Date().toISOString()
+                : prev.ends_at,
+          }
+        : prev,
+    );
   };
 
   const hsr = async (rid: string) => {

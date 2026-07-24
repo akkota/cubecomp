@@ -16,6 +16,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { createClient } from '@/lib/supabase/client';
 import { configureCompetitionVisibilityAction } from '@/actions/competitionPrivacy';
 import { WCA_EVENTS, type WcaEventKey } from '@/lib/wca-events';
+import {
+  applyEventSelection,
+  defaultFormatForEvent,
+  type EventFormat,
+  type SelectedEvent,
+} from '@/lib/event-selection';
 import { toast } from 'sonner';
 import { ChevronRight, Trophy, ArrowLeft, Layers, ShuffleIcon, Lock, Globe, Swords } from 'lucide-react';
 
@@ -23,14 +29,6 @@ const formSchema = z.object({
   name: z.string().min(3, 'Name must be at least 3 characters').max(100),
   description: z.string().max(500).optional(),
 });
-
-type EventFormat = 'average' | 'mean';
-
-type SelectedEvent = {
-  key: WcaEventKey;
-  roundCount: number;
-  format: EventFormat;
-};
 
 function formatLabel(format: EventFormat) {
   return format === 'average' ? 'Ao5' : 'Mo3';
@@ -40,15 +38,13 @@ function formatDescription(format: EventFormat) {
   return format === 'average' ? 'Average of 5' : 'Mean of 3';
 }
 
-function defaultFormatForEvent(eventKey: WcaEventKey): EventFormat {
-  return WCA_EVENTS.find(e => e.key === eventKey)?.format ?? 'average';
-}
-
 export function CreateCompetitionForm() {
   const [selectedEvents, setSelectedEvents] = useState<SelectedEvent[]>([]);
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   const [competitionPassword, setCompetitionPassword] = useState('');
   const [competitionType, setCompetitionType] = useState<'standard' | 'head_to_head'>('standard');
+  const [startsAt, setStartsAt] = useState('');
+  const [endsAt, setEndsAt] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const supabase = createClient();
@@ -69,21 +65,8 @@ export function CreateCompetitionForm() {
     }
   };
 
-  const toggleEvent = (eventKey: WcaEventKey) => {
-    setSelectedEvents(prev => {
-      const existing = prev.find(e => e.key === eventKey);
-      if (existing) return prev.filter(e => e.key !== eventKey);
-
-      const next = {
-        key: eventKey,
-        roundCount: 1,
-        format: defaultFormatForEvent(eventKey),
-      };
-
-      // Head-to-head: single event only (replace any previous selection)
-      if (competitionType === 'head_to_head') return [next];
-      return [...prev, next];
-    });
+  const setEventSelected = (eventKey: WcaEventKey, selected: boolean) => {
+    setSelectedEvents(prev => applyEventSelection(prev, eventKey, selected, competitionType));
   };
 
   const updateRoundCount = (eventKey: WcaEventKey, count: number) => {
@@ -122,6 +105,11 @@ export function CreateCompetitionForm() {
       return;
     }
 
+    if (startsAt && endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
+      toast.error('End time must be after the start time');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -144,6 +132,8 @@ export function CreateCompetitionForm() {
           // Always insert as public; configure_competition_visibility performs the private transition
           // so the password trigger and secrets row stay consistent.
           visibility: 'public',
+          starts_at: startsAt ? new Date(startsAt).toISOString() : null,
+          ends_at: endsAt ? new Date(endsAt).toISOString() : null,
         })
         .select('id, name, visibility, competition_type')
         .single();
@@ -281,6 +271,31 @@ export function CreateCompetitionForm() {
               <Label htmlFor="description">Description</Label>
               <Textarea id="description" placeholder="Optional description, rules, etc." rows={3} {...form.register('description')} />
             </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="starts-at">Starts (optional)</Label>
+                <Input
+                  id="starts-at"
+                  type="datetime-local"
+                  value={startsAt}
+                  onChange={e => setStartsAt(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ends-at">Ends (optional)</Label>
+                <Input
+                  id="ends-at"
+                  type="datetime-local"
+                  value={endsAt}
+                  onChange={e => setEndsAt(e.target.value)}
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground">
+                  After this time registration closes and the competition is treated as completed.
+                </p>
+              </div>
+            </div>
             <div className="flex items-center justify-between rounded-lg border border-border p-4">
               <div className="space-y-0.5">
                 <Label htmlFor="generate-scrambles" className="flex items-center gap-2 text-sm font-medium">
@@ -396,27 +411,21 @@ export function CreateCompetitionForm() {
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {WCA_EVENTS.map(event => {
                 const selected = selectedEvents.find(e => e.key === event.key);
+                const isSelected = !!selected;
                 return (
-                  <div
+                  <label
                     key={event.key}
-                    role="button"
-                    tabIndex={0}
                     className={`flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-all duration-200 ${
-                      selected
+                      isSelected
                         ? 'border-cube-blue/50 bg-cube-blue/5 shadow-sm'
                         : 'border-border hover:border-border hover:bg-accent/50'
                     }`}
-                    onClick={() => toggleEvent(event.key)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        toggleEvent(event.key);
-                      }
-                    }}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-lg">{event.icon}</span>
-                      <div>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="text-lg" aria-hidden>
+                        {event.icon}
+                      </span>
+                      <div className="min-w-0">
                         <p className="text-sm font-medium">{event.name}</p>
                         <p className="text-xs text-muted-foreground">
                           {selected
@@ -426,11 +435,12 @@ export function CreateCompetitionForm() {
                       </div>
                     </div>
                     <Switch
-                      checked={!!selected}
-                      onClick={e => e.stopPropagation()}
-                      onCheckedChange={() => toggleEvent(event.key)}
+                      checked={isSelected}
+                      aria-label={`Select ${event.name}`}
+                      onCheckedChange={checked => setEventSelected(event.key, checked)}
+                      onClick={e => e.preventDefault()}
                     />
-                  </div>
+                  </label>
                 );
               })}
             </div>

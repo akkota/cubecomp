@@ -42,26 +42,14 @@ export async function registerForCompetitionAction(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, error: 'Not authenticated' };
 
-  // Once the H2H bracket is generated (ready+) registration is locked
-  const { data: comp } = await supabase
-    .from('competitions')
-    .select('competition_type')
-    .eq('id', competitionId)
-    .maybeSingle();
-  if (comp?.competition_type === 'head_to_head') {
-    const { data: lockedTournament } = await supabase
-      .from('tournaments')
-      .select('id, status')
-      .eq('competition_id', competitionId)
-      .in('status', ['ready', 'active', 'completed'])
-      .limit(1)
-      .maybeSingle();
-    if (lockedTournament) {
-      return {
-        success: false,
-        error: 'Registration is closed — the bracket has already been generated.',
-      };
-    }
+  // Refresh effective status server-side before attempting registration
+  await supabase.rpc('refresh_competition_status', { comp_id: competitionId });
+
+  const { data: open } = await supabase.rpc('competition_registration_open', {
+    comp_id: competitionId,
+  });
+  if (open === false) {
+    return { success: false, error: 'Registration is closed for this competition' };
   }
 
   const { data, error } = await supabase.rpc('register_for_competition', {

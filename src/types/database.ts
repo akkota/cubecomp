@@ -24,6 +24,8 @@ export interface Competition {
   generate_scrambles: boolean;
   allow_spectators: boolean;
   require_verified_solves: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
   created_at: string;
   updated_at: string;
 }

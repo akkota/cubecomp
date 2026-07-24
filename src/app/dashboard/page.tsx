@@ -152,7 +152,15 @@ export default function DashboardPage() {
       }
 
       const attachStatus = (list: any[]) =>
-        list.map(c => ({ ...c, _displayStatus: deriveCompetitionStatus(roundsByComp.get(c.id) ?? []) })) as CompWithStatus[];
+        list.map(c => ({
+          ...c,
+          _displayStatus: deriveCompetitionStatus(roundsByComp.get(c.id) ?? [], {
+            status: c.status,
+            startsAt: c.starts_at,
+            endsAt: c.ends_at,
+            competitionType: c.competition_type,
+          }),
+        })) as CompWithStatus[];
 
       // Filter out created comps from admin list (no duplicates)
       const adminFiltered = adminList.filter(a => !createdList.some(c => c.id === a.id));

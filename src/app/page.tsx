@@ -85,6 +85,9 @@ export default function HomePage() {
         displayStatus: deriveCompetitionStatus(roundsByComp.get(c.id) ?? [], {
           competitionType: c.competition_type,
           tournamentStatuses: tournamentsByComp.get(c.id) ?? [],
+          status: c.status,
+          startsAt: c.starts_at,
+          endsAt: c.ends_at,
         }),
       }));
 
