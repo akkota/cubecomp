@@ -15,6 +15,7 @@ import {
   type TimerResult,
   type TimerState,
 } from '@/components/competitions/cube-timer';
+import { ScrambleCard } from '@/components/competitions/scramble-card';
 import { submitTimesAction } from '@/actions/submitTimes';
 import {
   buildSolveInputs,
@@ -323,7 +324,14 @@ export default function RoundPage() {
           <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><CubeIcon className="h-4 w-4 text-cube-blue"/>Scrambles</CardTitle></CardHeader>
           <CardContent>
             <div className="grid gap-2 sm:grid-cols-2">
-              {scrambles.map(s=><div key={s.id} className="flex items-start gap-2.5 rounded-lg border border-border bg-muted p-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-cube-blue/10 text-xs font-bold text-cube-blue">{s.scramble_number}</span><code className="font-mono text-xs leading-relaxed break-all">{s.scramble}</code></div>)}
+              {scrambles.map(s => (
+                <ScrambleCard
+                  key={s.id}
+                  eventKey={params.event}
+                  scramble={s.scramble}
+                  label={s.scramble_number}
+                />
+              ))}
             </div>
           </CardContent>
         </Card>

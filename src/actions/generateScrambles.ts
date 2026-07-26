@@ -1,6 +1,7 @@
 'use server';
 
 import { generateAndStoreScrambles } from '@/lib/scramble';
+import type { SupabaseScrambleStore } from '@/lib/scramble';
 import { createClient } from '@/lib/supabase/server';
 
 export async function generateScramblesAction(
@@ -37,5 +38,10 @@ export async function generateScramblesAction(
   }
   if (!isAdmin) throw new Error('Not authorized');
 
-  return generateAndStoreScrambles(roundId, eventKey, solveCount, supabase);
+  return generateAndStoreScrambles(
+    roundId,
+    eventKey,
+    solveCount,
+    supabase as unknown as SupabaseScrambleStore,
+  );
 }

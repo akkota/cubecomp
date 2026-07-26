@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { createClient } from '@/lib/supabase/client';
 import { BracketView } from '@/components/tournament/bracket-view';
+import { ScrambleCard } from '@/components/competitions/scramble-card';
 import {
   generateBracketAction, activateTournamentAction, cancelTournamentAction,
   submitSolveResultAction, adminResolveTieAction,
@@ -458,9 +459,10 @@ export function TournamentDetailView({ competitionId, tournamentId }: DetailProp
             ) : activeMatch.status === 'active' && activeSet && activeSolve ? (
               <>
             {activeSolve.scramble ? (
-              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-center font-mono text-[13px] leading-relaxed tracking-wide">
-                {activeSolve.scramble}
-              </div>
+              <ScrambleCard
+                eventKey={tournament.event_key ?? '333'}
+                scramble={activeSolve.scramble}
+              />
             ) : (
               <div className="rounded-md border border-dashed border-border px-3 py-1.5 text-center text-xs text-muted-foreground">
                 No scramble — enter times for both competitors.

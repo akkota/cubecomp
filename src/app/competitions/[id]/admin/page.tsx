@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
+import { ScrambleCard } from "@/components/competitions/scramble-card";
 import { WCA_EVENTS } from "@/lib/wca-events";
 import { deriveCompetitionStatus } from "@/lib/competition-status";
 import { generateScramblesAction } from "@/actions/generateScrambles";
@@ -858,17 +859,15 @@ export default function CompetitionAdminPage() {
                               </div>
                             )}
                           {hs && (
-                            <div className="mt-3 flex flex-wrap gap-1.5">
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                               {rs.map((s) => (
-                                <span
+                                <ScrambleCard
                                   key={s.id}
-                                  className="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-1 text-xs font-mono"
-                                >
-                                  <span className="font-bold text-cube-blue">
-                                    {s.scramble_number}
-                                  </span>
-                                  {s.scramble}
-                                </span>
+                                  eventKey={ce.event_key}
+                                  scramble={s.scramble}
+                                  label={s.scramble_number}
+                                  compact
+                                />
                               ))}
                             </div>
                           )}

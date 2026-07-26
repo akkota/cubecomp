@@ -1,212 +1,77 @@
-/**
- * Lightweight random-move scramble generator.
- *
- * Replaces cubing.js (which is too heavy for Vercel's 10-second
- * serverless timeout) with an instant scrambler that produces
- * standard-notation scrambles for every WCA event.
- *
- * Uses standard WCA scramble lengths with axis-avoidance for
- * NxN puzzles to prevent redundant/trivial move sequences.
- */
+import { WCA_EVENTS, type WcaEventKey } from './wca-events';
 
-// ---------------------------------------------------------------------------
-// Move sets
-// ---------------------------------------------------------------------------
-
-const MOVES_333: string[] = ['U','D','R','L','F','B'];
-const MOVES_222: string[] = ['U','R','F'];
-const N3_DIRS: string[] = ['', "'", '2'];
-
-// Big-cube outer moves plus wide moves (Rw, Uw, etc.)
-function bigCubeMoves(size: number): string[] {
-  const faces = ['U','D','R','L','F','B'];
-  const moves: string[] = [];
-  for (const f of faces) {
-    moves.push(f);
-    moves.push(f + 'w');  // wide
-    if (size >= 6) moves.push('3' + f + 'w');
-    if (size >= 7) moves.push('4' + f + 'w');
-  }
-  return moves;
-}
-
-function bigCubeDirs(): string[] {
-  return ['', "'", '2'];
-}
-
-// Pyraminx: tip moves + face moves
-const MOVES_PYRA_BASE: string[] = ['U','L','R','B'];
-
-// Skewb: 4 corners labelled clockwise
-const MOVES_SKEWB: string[] = ['U','L','R','B'];
-
-// Square-1: simplified notation (slice positions + U/D twists)
-function sq1Scramble(): string {
-  const pairs: string[] = [];
-  for (let i = 0; i < 7; i++) {
-    const top = Math.floor(Math.random() * 7) - 3;
-    const bot = Math.floor(Math.random() * 7) - 3;
-    pairs.push(`(${top},${bot})`);
-  }
-  pairs.push('/');
-  return pairs.join(' / ');
-}
-
-// Clock: pin positions + dial turns
-function clockScramble(): string {
-  const pins = ['UR','DR','DL','UL','U','R','D','L','ALL'];
-  const scrambles: string[] = [];
-  for (let i = 0; i < 5; i++) {
-    const pin1 = pins[Math.floor(Math.random() * pins.length)];
-    const pin2 = pins[Math.floor(Math.random() * pins.length)];
-    const d1 = Math.floor(Math.random() * 12) - 5;
-    const d2 = Math.floor(Math.random() * 12) - 5;
-    scrambles.push(`${pin1}${d1 >= 0 ? '+' + d1 : d1} ${pin2}${d2 >= 0 ? '+' + d2 : d2}`);
-  }
-  return scrambles.join(', ');
-}
-
-// Megaminx: simplified (R++/R--/D++/D--/U/U')
-function megaminxScramble(length: number): string {
-  const parts: string[] = [];
-  for (let i = 0; i < length; i++) {
-    const r = Math.random();
-    if (r < 0.35) parts.push('R++');
-    else if (r < 0.7) parts.push('R--');
-    else if (r < 0.8) parts.push('D++');
-    else if (r < 0.9) parts.push('D--');
-    else parts.push(Math.random() < 0.5 ? 'U' : "U'");
-  }
-  return parts.join(' ');
-}
-
-// ---------------------------------------------------------------------------
-// Core generator
-// ---------------------------------------------------------------------------
-
-function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-/**
- * Generate a sequence of `length` moves, avoiding consecutive moves
- * on the same axis (same face letter group).
- */
-function generateMoveSequence(
-  moves: string[],
-  directions: string[],
-  length: number,
-): string {
-  const result: string[] = [];
-  let lastFace = '';
-
-  for (let i = 0; i < length; i++) {
-    let move: string;
-    // Pick a move that doesn't share an axis with the previous one
-    do {
-      move = pick(moves);
-    } while (result.length > 0 && move[0] === lastFace);
-
-    const dir = pick(directions);
-    result.push(move + dir);
-    lastFace = move[0];
-  }
-
-  return result.join(' ');
-}
-
-// ---------------------------------------------------------------------------
-// Per-event scramble generation
-// ---------------------------------------------------------------------------
-
-const SCRAMBLE_LENGTHS: Record<string, number> = {
-  '222': 9,
-  '333': 20,
-  '444': 40,
-  '555': 60,
-  '666': 80,
-  '777': 100,
-  '333bf': 20,
-  '333fm': 20,
-  '333oh': 20,
-  'clock': 14,
-  'mega': 70,
-  'pyra': 10,
-  'skewb': 9,
-  'sq1': 20,
-  '444bf': 40,
-  '555bf': 60,
-  '333mbf': 20,
+export const APP_TO_CUBING_EVENT: Record<WcaEventKey, string> = {
+  '333': '333',
+  '222': '222',
+  '444': '444',
+  '555': '555',
+  '666': '666',
+  '777': '777',
+  '333bf': '333bf',
+  '333fm': '333fm',
+  '333oh': '333oh',
+  clock: 'clock',
+  mega: 'minx',
+  pyra: 'pyram',
+  skewb: 'skewb',
+  sq1: 'sq1',
+  '444bf': '444bf',
+  '555bf': '555bf',
+  '333mbf': '333mbf',
 };
 
-function generateScramble(eventKey: string): string {
-  switch (eventKey) {
-    case '222':
-      return generateMoveSequence(MOVES_222, N3_DIRS, SCRAMBLE_LENGTHS['222']);
-
-    case '333':
-    case '333bf':
-    case '333fm':
-    case '333oh':
-    case '333mbf':
-      return generateMoveSequence(MOVES_333, N3_DIRS, SCRAMBLE_LENGTHS['333']);
-
-    case '444':
-    case '444bf':
-      return generateMoveSequence(bigCubeMoves(4), bigCubeDirs(), SCRAMBLE_LENGTHS['444']);
-
-    case '555':
-    case '555bf':
-      return generateMoveSequence(bigCubeMoves(5), bigCubeDirs(), SCRAMBLE_LENGTHS['555']);
-
-    case '666':
-      return generateMoveSequence(bigCubeMoves(6), bigCubeDirs(), SCRAMBLE_LENGTHS['666']);
-
-    case '777':
-      return generateMoveSequence(bigCubeMoves(7), bigCubeDirs(), SCRAMBLE_LENGTHS['777']);
-
-    case 'clock':
-      return clockScramble();
-
-    case 'mega':
-      return megaminxScramble(SCRAMBLE_LENGTHS['mega']);
-
-    case 'pyra': {
-      // Pyraminx: tips + face moves
-      const tips: string[] = ['u', 'l', 'r', 'b'];
-      const tipScramble = tips
-        .map(t => t + pick(N3_DIRS))
-        .join(' ');
-      const faceScramble = generateMoveSequence(MOVES_PYRA_BASE, N3_DIRS, SCRAMBLE_LENGTHS['pyra']);
-      return tipScramble + ' ' + faceScramble;
-    }
-
-    case 'skewb':
-      return generateMoveSequence(MOVES_SKEWB, N3_DIRS, SCRAMBLE_LENGTHS['skewb']);
-
-    case 'sq1':
-      return sq1Scramble();
-
-    default:
-      // Fallback to 3x3
-      return generateMoveSequence(MOVES_333, N3_DIRS, 20);
+export function cubingEventForAppEvent(eventKey: string): string {
+  const cubingEvent = APP_TO_CUBING_EVENT[eventKey as WcaEventKey];
+  if (!cubingEvent) {
+    throw new Error(`Unsupported WCA event: ${eventKey}`);
   }
+  return cubingEvent;
 }
 
-// ---------------------------------------------------------------------------
-// Public API (matches the old cubing.js interface)
-// ---------------------------------------------------------------------------
+export function supportedScrambleEvents(): WcaEventKey[] {
+  return WCA_EVENTS.map((event) => event.key);
+}
+
+interface ScrambleRow {
+  scramble: string;
+}
+
+export interface SupabaseScrambleStore {
+  from(table: 'scrambles'): {
+    select(columns: string): {
+      eq(column: string, value: string): {
+        order(column: string): PromiseLike<{
+          data: ScrambleRow[] | null;
+          error?: { code?: string; message: string } | null;
+        }>;
+      };
+    };
+    insert(rows: Array<{ round_id: string; scramble_number: number; scramble: string }>): PromiseLike<{
+      error: { code?: string; message: string } | null;
+    }>;
+  };
+}
+
+async function generateScramble(eventKey: string): Promise<string> {
+  const { randomScrambleForEvent } = await import('cubing/scramble');
+  const scramble = await randomScrambleForEvent(cubingEventForAppEvent(eventKey));
+  return scramble.toString();
+}
 
 /**
- * Generate a full set of scrambles for a round.
+ * Generate a full set of official WCA scrambles for a round.
  */
 export async function generateScrambles(
   eventKey: string,
   solveCount: number,
 ): Promise<string[]> {
+  if (!Number.isInteger(solveCount) || solveCount < 1) {
+    throw new Error('solveCount must be a positive integer');
+  }
+
   const scrambles: string[] = [];
-  for (let i = 0; i < solveCount; i++) {
-    scrambles.push(generateScramble(eventKey));
+  for (let i = 0; i < solveCount; i += 1) {
+    scrambles.push(await generateScramble(eventKey));
   }
   return scrambles;
 }
@@ -218,9 +83,11 @@ export async function generateAndStoreScrambles(
   roundId: string,
   eventKey: string,
   solveCount: number,
-  supabase: any,
+  supabase: SupabaseScrambleStore,
 ): Promise<string[]> {
-  // Idempotency guard — don't re-generate if scrambles already exist
+  // Validate before checking storage so invalid events never silently pass.
+  cubingEventForAppEvent(eventKey);
+
   const { data: existing } = await supabase
     .from('scrambles')
     .select('scramble')
@@ -228,7 +95,7 @@ export async function generateAndStoreScrambles(
     .order('scramble_number');
 
   if (existing && existing.length > 0) {
-    return existing.map((s: any) => s.scramble);
+    return existing.map((s) => s.scramble);
   }
 
   const scrambles = await generateScrambles(eventKey, solveCount);
@@ -243,7 +110,7 @@ export async function generateAndStoreScrambles(
       })),
     );
 
-  // Handle race condition — if another insert beat us, just return fresh data
+  // Handle race condition: if another insert beat us, return the persisted rows.
   if (error) {
     if (error.code === '23505') {
       const { data: raced } = await supabase
@@ -251,7 +118,7 @@ export async function generateAndStoreScrambles(
         .select('scramble')
         .eq('round_id', roundId)
         .order('scramble_number');
-      if (raced) return raced.map((s: any) => s.scramble);
+      if (raced) return raced.map((s) => s.scramble);
     }
     throw new Error(`Failed to store scrambles: ${error.message}`);
   }
