@@ -478,7 +478,9 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
     return {
       id: `seed-${i + 1}`,
       seed: i + 1,
-      display_name_snapshot: c?.profile?.display_name || c?.profile?.username || `Seed ${i + 1}`,
+      display_name_snapshot: c?.profile?.username
+        ? `@${c.profile.username}`
+        : `Seed ${i + 1}`,
     };
   });
 
@@ -863,7 +865,7 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
                       className="rounded"
                     />
                     <span className="flex-1 font-medium">
-                      {c.profile?.display_name || c.profile?.username || 'Unknown'}
+                      {c.profile?.username ? `@${c.profile.username}` : 'Unknown'}
                     </span>
                   </label>
                 ))}
@@ -918,7 +920,9 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
               return (
                 <div key={id} className="flex items-center gap-3">
                   <span className="text-xs text-text-secondary w-6">#{i + 1}</span>
-                  <span className="flex-1 font-medium text-sm">{c?.profile?.display_name || 'Unknown'}</span>
+                  <span className="flex-1 font-medium text-sm">
+                    {c?.profile?.username ? `@${c.profile.username}` : 'Unknown'}
+                  </span>
                   <Input
                     type="number"
                     placeholder="Avg (ms)"

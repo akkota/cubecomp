@@ -97,7 +97,7 @@ export default function DashboardPage() {
   const [adminOf, setAdminOf] = useState<CompWithStatus[]>([]);
   const [competing, setCompeting] = useState<CompWithStatus[]>([]);
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
+  const [username, setUsername] = useState<string | null>(null);
   const router = useRouter();
   const supabase = createClient();
 
@@ -105,7 +105,13 @@ export default function DashboardPage() {
     const go = async () => {
       const { data: { user: u } } = await supabase.auth.getUser();
       if (!u) { router.push('/login'); return; }
-      setUser(u);
+
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', u.id)
+        .maybeSingle();
+      setUsername(prof?.username ?? null);
 
       // ── 1. Competitions I created ──
       const { data: createdComps } = await supabase
@@ -199,7 +205,7 @@ export default function DashboardPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Dashboard</h1>
             <p className="mt-1 text-sm text-text-secondary">
-              Welcome back{user?.email ? `, ${user.email.split('@')[0]}` : ''}
+              Welcome back{username ? `, @${username}` : ''}
             </p>
           </div>
           <Link href="/competitions/new">

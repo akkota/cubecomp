@@ -163,12 +163,16 @@ export default function ProfilePage() {
   }, [router]);
 
   const handleSave = async () => {
+    if (!profile?.username) {
+      toast.error('Username is required. Sign up again if your profile is missing.');
+      return;
+    }
     setSaving(true);
     const { error } = await supabase
       .from('profiles')
       .upsert({
         id: user.id,
-        username: profile?.username || user.email?.split('@')[0] || 'user',
+        username: profile.username,
         display_name: displayName,
         wca_id: wcaId || null,
         notify_round_start: notifyRoundStart,
@@ -196,9 +200,11 @@ export default function ProfilePage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              {displayName || profile?.username || user?.email?.split('@')[0]}
+              {displayName || (profile?.username ? `@${profile.username}` : 'Profile')}
             </h1>
-            <p className="text-sm text-text-secondary">{user?.email}</p>
+            {profile?.username && (
+              <p className="text-sm text-text-secondary">@{profile.username}</p>
+            )}
             {wcaId && (
               <Badge variant="outline" className="mt-1 gap-1">
                 <Award className="h-3 w-3 text-cube-yellow" /> {wcaId}
@@ -310,8 +316,20 @@ export default function ProfilePage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    value={profile?.username ? `@${profile.username}` : ''}
+                    readOnly
+                    className="h-10 font-mono bg-muted"
+                  />
+                  <p className="text-xs text-text-secondary">
+                    Your public identity on CubeComp. Email is only used to sign in.
+                  </p>
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="display-name">Display Name</Label>
-                  <Input id="display-name" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="How others see you" className="h-10" />
+                  <Input id="display-name" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Optional friendly name" className="h-10" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="wca-id" className="flex items-center gap-2">
@@ -325,7 +343,7 @@ export default function ProfilePage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2"><Bell className="h-5 w-5 text-cube-green" /> Notifications</CardTitle>
-                <CardDescription>Choose which events you want to be notified about. (Email delivery requires Edge Functions setup.)</CardDescription>
+                <CardDescription>Choose which events you want to be notified about in the app.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between rounded-lg border border-border p-4">

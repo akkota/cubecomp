@@ -253,7 +253,7 @@ export function RoundLeaderboard({ roundId, format, solveCount }: Props) {
                 </TableCell>
                 <TableCell className="font-medium">
                   <div className="flex items-center gap-2">
-                    <span>{row.display_name || row.username}</span>
+                    <span>@{row.username}</span>
                     {verificationMap?.has(row.competitor_id) &&
                       (verificationMap.get(row.competitor_id) === "verified" ? (
                         <CheckCircle2

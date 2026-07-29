@@ -172,8 +172,10 @@ export async function setParticipantsAction(
     return { success: false, error: 'Competitors must be registered in this competition' };
   }
   const userIds = [...new Set(validComp.map(c => c.user_id))];
-  const { data: profiles } = await supabase.from('profiles').select('id, display_name').in('id', userIds);
-  const nameMap = new Map((profiles ?? []).map((p: any) => [p.id, p.display_name || 'Unknown']));
+  const { data: profiles } = await supabase.from('profiles').select('id, username, display_name').in('id', userIds);
+  const nameMap = new Map(
+    (profiles ?? []).map((p: any) => [p.id, p.username ? `@${p.username}` : 'Unknown']),
+  );
   const compMap = new Map(validComp.map(c => [c.id, c]));
 
   await supabase.from('tournament_participants').delete().eq('tournament_id', tournamentId);

@@ -2,10 +2,12 @@
 
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ThemePicker } from '@/components/theme/theme-picker';
 import { createClient } from '@/lib/supabase/client';
+import { useCurrentProfile } from '@/hooks/use-current-profile';
+import { publicHandle } from '@/lib/public-identity';
 import { Menu, X } from 'lucide-react';
 
 function CubeLogo({ className = 'h-7 w-7' }: { className?: string }) {
@@ -28,20 +30,15 @@ function CubeLogo({ className = 'h-7 w-7' }: { className?: string }) {
 }
 
 export function Navbar() {
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { profile, isSignedIn, loading } = useCurrentProfile();
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => { setUser(data.user); setLoading(false); });
-  }, []);
+  const handleLabel = profile ? publicHandle(profile) : null;
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    setUser(null);
     setMobileOpen(false);
     router.push('/');
     router.refresh();
@@ -71,15 +68,17 @@ export function Navbar() {
             Competitions
             {pathname === '/competitions' && <span className="absolute -bottom-[18px] left-1/2 -translate-x-1/2 h-[2px] w-8 rounded-full bg-cube-blue" />}
           </Link>
-          {!loading && user && <Link href="/dashboard" className={linkClass('/dashboard')}>
+          {!loading && isSignedIn && <Link href="/dashboard" className={linkClass('/dashboard')}>
             Dashboard
             {pathname === '/dashboard' && <span className="absolute -bottom-[18px] left-1/2 -translate-x-1/2 h-[2px] w-8 rounded-full bg-cube-blue" />}
           </Link>}
           <ThemePicker />
-          {!loading && (user ? (
+          {!loading && (isSignedIn ? (
             <div className="flex items-center gap-3">
               <Link href="/profile">
-                <span className="hidden lg:block rounded-full bg-surface-hover px-3 py-1 text-xs text-text-secondary hover:text-foreground transition-colors cursor-pointer">{user.email}</span>
+                <span className="hidden lg:block rounded-full bg-surface-hover px-3 py-1 text-xs text-text-secondary hover:text-foreground transition-colors cursor-pointer">
+                  {handleLabel ?? 'Profile'}
+                </span>
               </Link>
               <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-text-secondary">Sign Out</Button>
             </div>
@@ -103,12 +102,14 @@ export function Navbar() {
       {mobileOpen && (
         <div className="md:hidden border-t border-border bg-navbar/98 backdrop-blur-xl p-4 space-y-1">
           <Link href="/competitions" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Competitions</Link>
-          {user && <Link href="/dashboard" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Dashboard</Link>}
-          {user && <Link href="/profile" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Profile</Link>}
-          {user ? (
+          {isSignedIn && <Link href="/dashboard" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Dashboard</Link>}
+          {isSignedIn && <Link href="/profile" className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-surface-hover" onClick={() => setMobileOpen(false)}>Profile</Link>}
+          {isSignedIn ? (
             <>
               <div className="border-t border-border my-2" />
-              <span className="block px-3 py-1 text-xs text-text-secondary">{user.email}</span>
+              {handleLabel && (
+                <span className="block px-3 py-1 text-xs text-text-secondary">{handleLabel}</span>
+              )}
               <button onClick={handleSignOut} className="block w-full rounded-md px-3 py-2 text-left text-sm font-medium text-destructive hover:bg-destructive/10">Sign Out</button>
             </>
           ) : (

@@ -432,10 +432,11 @@ export default function CompetitionAdminPage() {
     }
   };
 
-  // ── Admin search ──
+  // ── Admin search (username only — email is never used) ──
   const searchUsers = async (q: string) => {
+    const cleaned = q.trim().replace(/^@/, '');
     setAdminSearch(q);
-    if (q.length < 2) {
+    if (cleaned.length < 2) {
       setAdminResults([]);
       return;
     }
@@ -443,7 +444,7 @@ export default function CompetitionAdminPage() {
     const { data } = await supabase
       .from("profiles")
       .select("id,username,display_name")
-      .ilike("username", `%${q}%`)
+      .ilike("username", `%${cleaned}%`)
       .limit(10);
     setAdminResults(data ?? []);
     setSearchingAdmin(false);
@@ -987,11 +988,11 @@ export default function CompetitionAdminPage() {
                         </div>
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold tracking-tight">
-                            {a.user?.display_name || a.user?.username || 'Admin'}
+                            {a.user?.username ? `@${a.user.username}` : 'Admin'}
                           </p>
-                          {a.user?.username && (
+                          {a.user?.display_name && (
                             <p className="truncate text-xs text-text-tertiary">
-                              @{a.user.username}
+                              {a.user.display_name}
                             </p>
                           )}
                         </div>
@@ -1015,12 +1016,17 @@ export default function CompetitionAdminPage() {
               {isOwner && (
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium">Add Admin</h4>
+                  <p className="text-xs text-text-secondary">
+                    Search by username only. Email addresses cannot be used to add admins.
+                  </p>
                   <Input
                     type="text"
                     placeholder="Search by username…"
                     value={adminSearch}
                     onChange={(e) => searchUsers(e.target.value)}
                     className="h-10"
+                    autoComplete="off"
+                    inputMode="text"
                   />
                   {searchingAdmin && (
                     <p className="text-xs text-text-secondary">Searching…</p>
@@ -1034,9 +1040,16 @@ export default function CompetitionAdminPage() {
                             key={r.id}
                             className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted px-4 py-3 sm:px-5"
                           >
-                            <span className="truncate text-sm font-medium">
-                              {r.display_name || r.username}
-                            </span>
+                            <div className="min-w-0">
+                              <span className="block truncate text-sm font-medium">
+                                @{r.username}
+                              </span>
+                              {r.display_name && (
+                                <span className="block truncate text-xs text-text-tertiary">
+                                  {r.display_name}
+                                </span>
+                              )}
+                            </div>
                             <Button
                               variant="outline"
                               size="sm"
@@ -1050,11 +1063,11 @@ export default function CompetitionAdminPage() {
                         ))}
                     </ul>
                   )}
-                  {adminSearch.length >= 2 &&
+                  {adminSearch.trim().replace(/^@/, '').length >= 2 &&
                     adminResults.length === 0 &&
                     !searchingAdmin && (
                       <p className="text-xs text-text-secondary">
-                        No matching users found.
+                        No matching usernames found.
                       </p>
                     )}
                 </div>
@@ -1123,8 +1136,9 @@ export default function CompetitionAdminPage() {
                                 <div className="flex items-center gap-2">
                                   <span className="text-lg">{wca?.icon}</span>
                                   <span className="font-medium truncate">
-                                    {sub.competitor?.user?.display_name ||
-                                      sub.competitor?.user?.username}
+                                    {sub.competitor?.user?.username
+                                      ? `@${sub.competitor.user.username}`
+                                      : 'Unknown'}
                                   </span>
                                   <Badge
                                     variant="outline"
