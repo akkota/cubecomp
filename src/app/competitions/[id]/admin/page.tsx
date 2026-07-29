@@ -17,7 +17,8 @@ import { createClient } from "@/lib/supabase/client";
 import { ScrambleCard } from "@/components/competitions/scramble-card";
 import { WCA_EVENTS } from "@/lib/wca-events";
 import { deriveCompetitionStatus } from "@/lib/competition-status";
-import { generateScramblesAction } from "@/actions/generateScrambles";
+import { storeScramblesAction } from "@/actions/generateScrambles";
+import { generateScrambles } from "@/lib/scramble";
 import { calculateAdvancementAction } from "@/actions/calculateAdvancement";
 import {
   configureCompetitionVisibilityAction,
@@ -224,12 +225,10 @@ export default function CompetitionAdminPage() {
     genRef.current.add(r.id);
     setGenerating((p) => ({ ...p, [r.id]: true }));
     try {
-      await Promise.race([
-        generateScramblesAction(r.id, ek, sc),
-        new Promise<never>((_, rj) =>
-          setTimeout(() => rj(new Error("Timed out")), 25000),
-        ),
-      ]);
+      // Generate in the browser — cubing.js workers are reliable there.
+      // The server only persists (avoids serverless worker hangs / fake timeouts).
+      const texts = await generateScrambles(ek, sc);
+      await storeScramblesAction(r.id, ek, texts);
       const { data: f } = await supabase
         .from("scrambles")
         .select("*")
@@ -238,7 +237,7 @@ export default function CompetitionAdminPage() {
       setScrambles((p) => ({ ...p, [r.id]: f ?? [] }));
       toast.success(`Scrambles generated`);
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(e.message ?? "Failed to generate scrambles");
     } finally {
       setGenerating((p) => ({ ...p, [r.id]: false }));
       genRef.current.delete(r.id);

@@ -20,6 +20,8 @@ export const APP_TO_CUBING_EVENT: Record<WcaEventKey, string> = {
   '333mbf': '333mbf',
 };
 
+const MAX_SCRAMBLE_LENGTH = 2000;
+
 export function cubingEventForAppEvent(eventKey: string): string {
   const cubingEvent = APP_TO_CUBING_EVENT[eventKey as WcaEventKey];
   if (!cubingEvent) {
@@ -30,6 +32,30 @@ export function cubingEventForAppEvent(eventKey: string): string {
 
 export function supportedScrambleEvents(): WcaEventKey[] {
   return WCA_EVENTS.map((event) => event.key);
+}
+
+export function normalizeScrambleText(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new Error('Scramble must be a string');
+  }
+  const scramble = value.trim();
+  if (!scramble) {
+    throw new Error('Scramble cannot be empty');
+  }
+  if (scramble.length > MAX_SCRAMBLE_LENGTH) {
+    throw new Error('Scramble is too long');
+  }
+  return scramble;
+}
+
+export function validateScrambleBatch(scrambles: unknown, solveCount: number): string[] {
+  if (!Number.isInteger(solveCount) || solveCount < 1) {
+    throw new Error('solveCount must be a positive integer');
+  }
+  if (!Array.isArray(scrambles) || scrambles.length !== solveCount) {
+    throw new Error(`Expected ${solveCount} scrambles`);
+  }
+  return scrambles.map(normalizeScrambleText);
 }
 
 interface ScrambleRow {
@@ -52,14 +78,47 @@ export interface SupabaseScrambleStore {
   };
 }
 
-async function generateScramble(eventKey: string): Promise<string> {
-  const { randomScrambleForEvent } = await import('cubing/scramble');
+type ScrambleApi = {
+  randomScrambleForEvent: (eventId: string) => Promise<{ toString(): string }>;
+};
+
+let scrambleApiPromise: Promise<ScrambleApi> | null = null;
+
+/**
+ * cubing.js scramble workers are designed for browsers. On the server they can
+ * hang or crawl when the worker entry is mangled by bundlers. Configure once
+ * and keep the module external (see next.config) for server paths that remain.
+ */
+async function getScrambleApi(): Promise<ScrambleApi> {
+  if (!scrambleApiPromise) {
+    scrambleApiPromise = (async () => {
+      const [{ randomScrambleForEvent }, { setSearchDebug }] = await Promise.all([
+        import('cubing/scramble'),
+        import('cubing/search'),
+      ]);
+      setSearchDebug({
+        logPerf: false,
+        // Prefetch the next scramble for the same event as soon as one finishes.
+        scramblePrefetchLevel: 'immediate',
+        // Prefer the bundler-safe worker instantiation strategy when needed.
+        prioritizeEsbuildWorkaroundForWorkerInstantiation: true,
+      });
+      return { randomScrambleForEvent };
+    })();
+  }
+  return scrambleApiPromise;
+}
+
+export async function generateScramble(eventKey: string): Promise<string> {
+  const { randomScrambleForEvent } = await getScrambleApi();
   const scramble = await randomScrambleForEvent(cubingEventForAppEvent(eventKey));
   return scramble.toString();
 }
 
 /**
  * Generate a full set of official WCA scrambles for a round.
+ * Same-event requests stay sequential so cubing's worker + immediate prefetch
+ * can reuse warm solver state (parallel same-event calls fight over one worker).
  */
 export async function generateScrambles(
   eventKey: string,
@@ -69,6 +128,9 @@ export async function generateScrambles(
     throw new Error('solveCount must be a positive integer');
   }
 
+  // Validate event before doing any worker work.
+  cubingEventForAppEvent(eventKey);
+
   const scrambles: string[] = [];
   for (let i = 0; i < solveCount; i += 1) {
     scrambles.push(await generateScramble(eventKey));
@@ -77,7 +139,51 @@ export async function generateScrambles(
 }
 
 /**
+ * Persist already-generated scramble texts for a round (idempotent).
+ */
+export async function storeScramblesForRound(
+  roundId: string,
+  scrambles: string[],
+  supabase: SupabaseScrambleStore,
+): Promise<string[]> {
+  const normalized = validateScrambleBatch(scrambles, scrambles.length);
+
+  const { data: existing } = await supabase
+    .from('scrambles')
+    .select('scramble')
+    .eq('round_id', roundId)
+    .order('scramble_number');
+
+  if (existing && existing.length > 0) {
+    return existing.map((s) => s.scramble);
+  }
+
+  const { error } = await supabase.from('scrambles').insert(
+    normalized.map((scramble, idx) => ({
+      round_id: roundId,
+      scramble_number: idx + 1,
+      scramble,
+    })),
+  );
+
+  if (error) {
+    if (error.code === '23505') {
+      const { data: raced } = await supabase
+        .from('scrambles')
+        .select('scramble')
+        .eq('round_id', roundId)
+        .order('scramble_number');
+      if (raced) return raced.map((s) => s.scramble);
+    }
+    throw new Error(`Failed to store scrambles: ${error.message}`);
+  }
+  return normalized;
+}
+
+/**
  * Generate scrambles and store them in the database for a round.
+ * Prefer client-side generate + storeScramblesForRound for admin UI;
+ * keep this for server-only callers (e.g. tournaments).
  */
 export async function generateAndStoreScrambles(
   roundId: string,
@@ -85,7 +191,6 @@ export async function generateAndStoreScrambles(
   solveCount: number,
   supabase: SupabaseScrambleStore,
 ): Promise<string[]> {
-  // Validate before checking storage so invalid events never silently pass.
   cubingEventForAppEvent(eventKey);
 
   const { data: existing } = await supabase
@@ -99,28 +204,5 @@ export async function generateAndStoreScrambles(
   }
 
   const scrambles = await generateScrambles(eventKey, solveCount);
-
-  const { error } = await supabase
-    .from('scrambles')
-    .insert(
-      scrambles.map((scramble, idx) => ({
-        round_id: roundId,
-        scramble_number: idx + 1,
-        scramble,
-      })),
-    );
-
-  // Handle race condition: if another insert beat us, return the persisted rows.
-  if (error) {
-    if (error.code === '23505') {
-      const { data: raced } = await supabase
-        .from('scrambles')
-        .select('scramble')
-        .eq('round_id', roundId)
-        .order('scramble_number');
-      if (raced) return raced.map((s) => s.scramble);
-    }
-    throw new Error(`Failed to store scrambles: ${error.message}`);
-  }
-  return scrambles;
+  return storeScramblesForRound(roundId, scrambles, supabase);
 }

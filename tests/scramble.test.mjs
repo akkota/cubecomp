@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -10,8 +13,11 @@ import {
   cubingEventForAppEvent,
   generateScrambles,
   supportedScrambleEvents,
+  validateScrambleBatch,
 } from '../src/lib/scramble.ts';
 import { SCRAMBLE_PUZZLES, puzzleForScrambleEvent } from '../src/lib/scramble-visualization.ts';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const expectedEvents = [
   '333',
@@ -81,4 +87,31 @@ test('scramble card renders stored scramble text for every app WCA event', () =>
     assert.ok(markup.includes(scramble), eventKey);
     assert.ok(!markup.includes('randomScrambleForEvent'), eventKey);
   }
+});
+
+test('validateScrambleBatch enforces count and non-empty text', () => {
+  assert.deepEqual(validateScrambleBatch(['R U', 'U R'], 2), ['R U', 'U R']);
+  assert.throws(() => validateScrambleBatch(['R U'], 2), /Expected 2/);
+  assert.throws(() => validateScrambleBatch(['', 'U'], 2), /empty/);
+  assert.throws(() => validateScrambleBatch('nope', 1), /Expected 1/);
+});
+
+test('admin generates scrambles in the browser and only stores on the server', () => {
+  const admin = readFileSync(join(root, 'src/app/competitions/[id]/admin/page.tsx'), 'utf8');
+  const actions = readFileSync(join(root, 'src/actions/generateScrambles.ts'), 'utf8');
+  const config = readFileSync(join(root, 'next.config.ts'), 'utf8');
+
+  assert.match(admin, /generateScrambles\(/);
+  assert.match(admin, /storeScramblesAction/);
+  assert.doesNotMatch(admin, /Timed out/);
+  assert.doesNotMatch(admin, /25000/);
+  assert.match(actions, /storeScramblesAction/);
+  assert.match(config, /serverExternalPackages/);
+  assert.match(config, /cubing/);
+});
+
+test('scramble module configures immediate prefetch for warm sequential generation', () => {
+  const scrambleLib = readFileSync(join(root, 'src/lib/scramble.ts'), 'utf8');
+  assert.match(scrambleLib, /scramblePrefetchLevel:\s*'immediate'/);
+  assert.match(scrambleLib, /prioritizeEsbuildWorkaroundForWorkerInstantiation:\s*true/);
 });

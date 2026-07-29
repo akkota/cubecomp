@@ -290,6 +290,7 @@ async function startMatchPlay(
   matchId: string,
   eventKey: string | null,
   scrambleSource: string,
+  precomputedScramble?: string | null,
 ): Promise<{ success: true } | { success: false; error: string }> {
   const { error: matchErr } = await supabase
     .from('tournament_matches')
@@ -326,12 +327,12 @@ async function startMatchPlay(
     .maybeSingle();
 
   if (!pendingSolve) {
-    let scramble: string | null = null;
-    if (scrambleSource === 'generated' && eventKey) {
+    let scramble: string | null =
+      typeof precomputedScramble === 'string' ? precomputedScramble : null;
+    if (scramble == null && scrambleSource === 'generated' && eventKey) {
       try {
-        const { generateScrambles } = await import('@/lib/scramble');
-        const scrambles = await generateScrambles(eventKey, 1);
-        scramble = scrambles[0] || null;
+        const { generateScramble } = await import('@/lib/scramble');
+        scramble = await generateScramble(eventKey);
       } catch {
         scramble = null;
       }
@@ -367,7 +368,9 @@ export async function activateTournamentAction(tournamentId: string): Promise<Ac
   const { error } = await supabase.from('tournaments').update({ status: 'active' }).eq('id', tournamentId);
   if (error) return { success: false, error: error.message };
 
-  // Start every first-round playable match — multiple can be live at once
+  // Start every first-round playable match — multiple can be live at once.
+  // Batch-generate scrambles once so we warm the solver once instead of
+  // paying cold-start cost per match.
   const { data: playable } = await supabase
     .from('tournament_matches')
     .select('id')
@@ -379,8 +382,26 @@ export async function activateTournamentAction(tournamentId: string): Promise<Ac
     .not('competitor2_id', 'is', null)
     .order('bracket_index');
 
-  for (const m of playable ?? []) {
-    const started = await startMatchPlay(supabase, m.id, t.event_key, t.scramble_source);
+  const matches = playable ?? [];
+  let batch: Array<string | null> = matches.map(() => null);
+  if (t.scramble_source === 'generated' && t.event_key && matches.length > 0) {
+    try {
+      const { generateScrambles } = await import('@/lib/scramble');
+      const texts = await generateScrambles(t.event_key, matches.length);
+      batch = texts;
+    } catch {
+      batch = matches.map(() => null);
+    }
+  }
+
+  for (let i = 0; i < matches.length; i += 1) {
+    const started = await startMatchPlay(
+      supabase,
+      matches[i].id,
+      t.event_key,
+      t.scramble_source,
+      batch[i],
+    );
     if (!started.success) return started;
   }
 
@@ -510,9 +531,8 @@ export async function ensureActiveMatchPlayableAction(tournamentId: string, matc
     let scramble: string | null = null;
     if (t.scramble_source === 'generated' && t.event_key) {
       try {
-        const { generateScrambles } = await import('@/lib/scramble');
-        const scrambles = await generateScrambles(t.event_key, 1);
-        scramble = scrambles[0] || null;
+        const { generateScramble } = await import('@/lib/scramble');
+        scramble = await generateScramble(t.event_key);
       } catch {
         scramble = null;
       }
@@ -529,12 +549,12 @@ export async function ensureActiveMatchPlayableAction(tournamentId: string, matc
   } else if (!pendingSolve.scramble && t.scramble_source === 'generated' && t.event_key) {
     // RPC-created next solves omit scramble — backfill once for the active attempt
     try {
-      const { generateScrambles } = await import('@/lib/scramble');
-      const scrambles = await generateScrambles(t.event_key, 1);
-      if (scrambles[0]) {
+      const { generateScramble } = await import('@/lib/scramble');
+      const scramble = await generateScramble(t.event_key);
+      if (scramble) {
         await supabase
           .from('tournament_match_solves')
-          .update({ scramble: scrambles[0] })
+          .update({ scramble })
           .eq('id', pendingSolve.id)
           .is('scramble', null);
       }
@@ -640,9 +660,8 @@ export async function reSolveAction(
   if (solve.status !== 'tied') return { success: false, error: 'Solve is not tied' };
   let scramble: string | null = null;
   if (t.scramble_source === 'generated' && t.event_key) {
-    const { generateScrambles } = await import('@/lib/scramble');
-    const scrambles = await generateScrambles(t.event_key, 1);
-    scramble = scrambles[0] || null;
+    const { generateScramble } = await import('@/lib/scramble');
+    scramble = await generateScramble(t.event_key);
   }
   const { data, error } = await supabase.rpc('re_solve_tournament_tie', {
     p_tournament_id: tournamentId, p_solve_id: solveId, p_scramble: scramble,
