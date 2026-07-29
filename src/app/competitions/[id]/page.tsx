@@ -32,7 +32,6 @@ export default function CompetitionDetailPage() {
   const [roundParticipation, setRoundParticipation] = useState<Set<string>>(new Set());
   const [isOwner, setIsOwner] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isH2H, setH2H] = useState(false);
   const [tournamentStatuses, setTournamentStatuses] = useState<string[]>([]);
   const [isRegistered, setIsRegistered] = useState(false);
   const [registrationLocked, setRegistrationLocked] = useState(false);
@@ -61,10 +60,9 @@ export default function CompetitionDetailPage() {
       setCompetition(comp);
       setIsOwner(user?.id === comp.created_by);
       setIsAdmin(user?.id === comp.created_by);
-      const isH2H = comp.competition_type === 'head_to_head';
-      setH2H(isH2H);
+      const isHeadToHead = comp.competition_type === 'head_to_head';
 
-      if (isH2H) {
+      if (isHeadToHead) {
         const { data: ts } = await supabase
           .from('tournaments')
           .select('id, status')
@@ -184,6 +182,10 @@ export default function CompetitionDetailPage() {
       <p className="text-muted-foreground">Competition not found.</p>
     </div>
   );
+
+  // Derive this directly from the loaded competition. Keeping it as separate
+  // state can leak the previous competition's type during client navigation.
+  const isH2H = competition.competition_type === 'head_to_head';
 
   const getRoundsForEvent = (eventId: string) =>
     rounds.filter(r => r.competition_event_id === eventId);

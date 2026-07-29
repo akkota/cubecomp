@@ -3,11 +3,8 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 
 import { WCA_EVENTS } from '../src/lib/wca-events.ts';
-import { ScrambleCard } from '../src/components/competitions/scramble-card.tsx';
 import {
   APP_TO_CUBING_EVENT,
   cubingEventForAppEvent,
@@ -72,21 +69,18 @@ test('visualization maps every app WCA event to a cubing puzzle', () => {
   assert.equal(puzzleForScrambleEvent('sq1'), 'square1');
 });
 
-test('scramble card renders stored scramble text for every app WCA event', () => {
-  for (const eventKey of expectedEvents) {
-    const scramble = `${eventKey} STORED SCRAMBLE`;
-    const markup = renderToStaticMarkup(
-      React.createElement(ScrambleCard, {
-        eventKey,
-        scramble,
-        label: 1,
-      }),
-    );
+test('scramble card bundles the official state renderer and retains text fallback', () => {
+  const card = readFileSync(
+    join(root, 'src/components/competitions/scramble-card.tsx'),
+    'utf8',
+  );
 
-    assert.match(markup, /<code/);
-    assert.ok(markup.includes(scramble), eventKey);
-    assert.ok(!markup.includes('randomScrambleForEvent'), eventKey);
-  }
+  assert.match(card, /import \{ TwistyPlayer \} from 'cubing\/twisty'/);
+  assert.doesNotMatch(card, /await import\('cubing\/twisty'\)/);
+  assert.match(card, /experimentalSetupAlg: scramble/);
+  assert.match(card, /\{scramble\}/);
+  assert.match(card, /Visualization unavailable — retry/);
+  assert.doesNotMatch(card, /randomScrambleForEvent/);
 });
 
 test('validateScrambleBatch enforces count and non-empty text', () => {

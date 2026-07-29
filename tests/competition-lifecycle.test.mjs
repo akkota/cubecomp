@@ -169,3 +169,12 @@ test('detail page blocks register CTA when registration is closed', () => {
   assert.match(page, /!isRegistered && !isOwner && !isAdmin && registrationOpen/);
   assert.match(page, /Registration is closed for this competition/);
 });
+
+test('detail page only exposes head-to-head UI for head-to-head competitions', () => {
+  const page = readFileSync(join(root, 'src/app/competitions/[id]/page.tsx'), 'utf8');
+
+  assert.match(page, /const isH2H = competition\.competition_type === 'head_to_head'/);
+  assert.doesNotMatch(page, /useState\(false\).*isH2H|setH2H/);
+  assert.doesNotMatch(page, /<TabsTrigger[^>]+value=["'](?:head-to-head|head_to_head|tournaments)["']/);
+  assert.match(page, /\{isH2H \? \(/);
+});
