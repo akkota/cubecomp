@@ -96,22 +96,25 @@ test('validateScrambleBatch enforces count and non-empty text', () => {
   assert.throws(() => validateScrambleBatch('nope', 1), /Expected 1/);
 });
 
-test('admin generates scrambles in the browser and only stores on the server', () => {
+test('admin generates scrambles in an externalized Node server action', () => {
   const admin = readFileSync(join(root, 'src/app/competitions/[id]/admin/page.tsx'), 'utf8');
   const actions = readFileSync(join(root, 'src/actions/generateScrambles.ts'), 'utf8');
   const config = readFileSync(join(root, 'next.config.ts'), 'utf8');
+  const layout = readFileSync(join(root, 'src/app/competitions/[id]/admin/layout.tsx'), 'utf8');
 
-  assert.match(admin, /generateScrambles\(/);
-  assert.match(admin, /storeScramblesAction/);
+  assert.match(admin, /generateScramblesAction/);
+  assert.doesNotMatch(admin, /from ["']@\/lib\/scramble["']/);
   assert.doesNotMatch(admin, /Timed out/);
   assert.doesNotMatch(admin, /25000/);
-  assert.match(actions, /storeScramblesAction/);
+  assert.match(actions, /generateAndStoreScrambles/);
   assert.match(config, /serverExternalPackages/);
   assert.match(config, /cubing/);
+  assert.match(layout, /runtime = "nodejs"/);
+  assert.match(layout, /maxDuration = 60/);
 });
 
 test('scramble module configures immediate prefetch for warm sequential generation', () => {
   const scrambleLib = readFileSync(join(root, 'src/lib/scramble.ts'), 'utf8');
   assert.match(scrambleLib, /scramblePrefetchLevel:\s*'immediate'/);
-  assert.match(scrambleLib, /prioritizeEsbuildWorkaroundForWorkerInstantiation:\s*true/);
+  assert.doesNotMatch(scrambleLib, /prioritizeEsbuildWorkaroundForWorkerInstantiation:\s*true/);
 });

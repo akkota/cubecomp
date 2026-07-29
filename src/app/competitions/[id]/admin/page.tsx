@@ -17,8 +17,7 @@ import { createClient } from "@/lib/supabase/client";
 import { ScrambleCard } from "@/components/competitions/scramble-card";
 import { WCA_EVENTS } from "@/lib/wca-events";
 import { deriveCompetitionStatus } from "@/lib/competition-status";
-import { storeScramblesAction } from "@/actions/generateScrambles";
-import { generateScrambles } from "@/lib/scramble";
+import { generateScramblesAction } from "@/actions/generateScrambles";
 import { calculateAdvancementAction } from "@/actions/calculateAdvancement";
 import {
   configureCompetitionVisibilityAction,
@@ -225,10 +224,9 @@ export default function CompetitionAdminPage() {
     genRef.current.add(r.id);
     setGenerating((p) => ({ ...p, [r.id]: true }));
     try {
-      // Generate in the browser — cubing.js workers are reliable there.
-      // The server only persists (avoids serverless worker hangs / fake timeouts).
-      const texts = await generateScrambles(ek, sc);
-      await storeScramblesAction(r.id, ek, texts);
+      // cubing.js uses a module worker. Run it in the Node action where the
+      // package is externalized so Next does not rewrite the worker URL.
+      await generateScramblesAction(r.id, ek, sc);
       const { data: f } = await supabase
         .from("scrambles")
         .select("*")

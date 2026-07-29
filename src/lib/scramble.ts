@@ -85,9 +85,9 @@ type ScrambleApi = {
 let scrambleApiPromise: Promise<ScrambleApi> | null = null;
 
 /**
- * cubing.js scramble workers are designed for browsers. On the server they can
- * hang or crawl when the worker entry is mangled by bundlers. Configure once
- * and keep the module external (see next.config) for server paths that remain.
+ * Keep cubing.js external on the server (see next.config) so Next does not
+ * rewrite the module worker entry URL. The native package worker is reliable
+ * in Node and avoids browser bundler/CSP differences.
  */
 async function getScrambleApi(): Promise<ScrambleApi> {
   if (!scrambleApiPromise) {
@@ -100,8 +100,6 @@ async function getScrambleApi(): Promise<ScrambleApi> {
         logPerf: false,
         // Prefetch the next scramble for the same event as soon as one finishes.
         scramblePrefetchLevel: 'immediate',
-        // Prefer the bundler-safe worker instantiation strategy when needed.
-        prioritizeEsbuildWorkaroundForWorkerInstantiation: true,
       });
       return { randomScrambleForEvent };
     })();
