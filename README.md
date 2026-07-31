@@ -1,32 +1,55 @@
 # CubeComp
 
-Rubik's Cube Competition Platform built with Next.js, Supabase, and shadcn/ui.
+Online Rubik’s Cube competition platform. Create public or private competitions, run multi-round WCA-format events or head-to-head brackets, generate official-style scrambles, and track results on live leaderboards.
+
+Built with **Next.js**, **Supabase**, and **cubing.js**.
+
+## Features
+
+- **Accounts** — email/password auth via Supabase; **username** is the public identity (email is for sign-in only)
+- **Standard competitions** — 17 official WCA events, multi-round formats (Ao5 / Mo3), advancement rules, live leaderboards
+- **Head-to-head** — single/double elimination brackets, best-of sets, bye propagation
+- **Scrambles** — WCA-compatible generation via `cubing.js`, with official-style 2D state visualizations
+- **Privacy** — public or password-protected private competitions
+- **Admin tools** — manage rounds, add admins by username, optional video verification
+- **Lifecycle gates** — registration and scramble access close when a competition ends
+- **Themes** — multiple UI themes
+
+## Tech Stack
+
+| Layer | Choice |
+| --- | --- |
+| Framework | Next.js 16 (App Router) |
+| Auth + DB | Supabase (Auth, Postgres, RLS) |
+| UI | Tailwind CSS v4 + shadcn/ui |
+| Scrambles | cubing.js |
+| Validation | Zod + React Hook Form |
 
 ## Getting Started
 
-### 1. Create a Supabase Project
+### 1. Prerequisites
 
-1. Go to [supabase.com](https://supabase.com) and create an account / project
-2. From your project dashboard, go to **SQL Editor**
-3. Paste and run the contents of `supabase/migrations/001_initial_schema.sql`
-4. Go to **Project Settings > API** and copy:
-   - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL`
-   - `anon public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- Node.js 22+
+- A [Supabase](https://supabase.com) project
 
-### 2. Configure Environment
+### 2. Database
+
+Apply **all** SQL files in `supabase/migrations/` in order (`001` → `023`) via the Supabase SQL Editor, or link the project with the Supabase CLI and push migrations.
+
+### 3. Environment
 
 ```bash
 cp .env.example .env.local
 ```
 
-Fill in your Supabase URL and anon key in `.env.local`:
+From **Project Settings → API**, set:
 
-```
+```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-### 3. Run the App
+### 4. Install & run
 
 ```bash
 npm install
@@ -35,40 +58,48 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Features
+### 5. Scripts
 
-- **User accounts** via Supabase Auth (email/password)
-- **Create competitions** with any of the 17 official WCA events
-- **Multi-round events** with configurable cutoffs
-- **Server-side scramble generation** using `cubing.js`
-- **Self-report and judge time entry** modes
-- **Live leaderboards** per event/round
-- **Row Level Security** on all database tables
-
-## Tech Stack
-
-- **Framework:** Next.js 15 (App Router)
-- **Auth + DB:** Supabase
-- **Styling:** Tailwind CSS v4 + shadcn/ui
-- **Scramble Gen:** cubing.js (server-side)
-- **Validation:** Zod + React Hook Form
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Development server |
+| `npm run build` | Production build |
+| `npm start` | Serve production build |
+| `npm test` | Run unit / regression tests |
+| `npm run lint` | ESLint |
 
 ## Project Structure
 
 ```
 src/
-  app/
-    (auth)/         # Login, signup, auth callback
-    dashboard/      # User dashboard
-    competitions/   # Competition CRUD, leaderboards
-  components/
-    auth/           # Auth form components
-    competitions/   # Competition-related components
-  lib/
-    supabase/       # Supabase client (server + browser)
-    scramble.ts     # Scramble generation
-    results.ts      # Result calculation (averages, rankings)
-    wca-events.ts   # WCA event definitions
-  types/
-    database.ts     # TypeScript types for DB schema
+  app/                 # Routes (auth, dashboard, competitions, profile)
+  actions/             # Server actions (registration, scrambles, tournaments, …)
+  components/          # UI (auth, competitions, tournament, theme, …)
+  hooks/               # Client hooks (e.g. current profile)
+  lib/                 # Supabase clients, scrambles, results, status, identity
+  types/               # Shared TypeScript types
+supabase/
+  migrations/          # Ordered Postgres schema, RLS, and RPC migrations
+tests/                 # Node test suite
 ```
+
+## How Identity Works
+
+- **Email** — used only for authentication (login / signup)
+- **Username** — public handle everywhere else (navbar, leaderboards, admin invite, brackets)
+
+Admin invite searches by username, not email.
+
+## Competition Types
+
+**Standard** — multi-event, multi-round WCA-style meets with registration, scrambles, timer/manual entry, and advancement.
+
+**Head-to-head** — single-event bracket tournaments (seeded or unseeded) with match sets and solve-by-solve play.
+
+## Deploy
+
+Typical setup: push to the branch connected to **Vercel**, with the same `NEXT_PUBLIC_SUPABASE_*` env vars. Apply migrations to your Supabase project separately (Vercel does not run them for you).
+
+## License
+
+Private project — adjust this section if you publish under an open-source license.
