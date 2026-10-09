@@ -1,6 +1,6 @@
 /**
  * Smoke checks for private-competition client contracts.
- * DB/RPC behavior is enforced in supabase/migrations/009_private_competitions.sql
+ * Executable DB/RPC regression coverage lives in private-competitions-db.test.mjs.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

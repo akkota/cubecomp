@@ -34,7 +34,19 @@ Built with **Next.js**, **Supabase**, and **cubing.js**.
 
 ### 2. Database
 
-Apply **all** SQL files in `supabase/migrations/` in order (`001` → `023`) via the Supabase SQL Editor, or link the project with the Supabase CLI and push migrations.
+Apply **all** SQL files in `supabase/migrations/` in order (`001` → `024`) via the Supabase SQL Editor, or link the project with the Supabase CLI and push migrations.
+
+If your database already has migrations through `023`, run only [migration 024](supabase/migrations/024_fix_competition_password_search_path.sql) in the SQL Editor of the Supabase project used by your deployed website. It fixes `function gen_salt(unknown) does not exist` during private competition creation and the related `crypt` error during password verification. It preserves existing passwords and privacy protections. Do not reapply `011`, which would replace newer privacy behavior with older function bodies. Deploying to Vercel does not apply this database repair.
+
+Before applying the repair, confirm that `pgcrypto` is installed in `extensions` (the expected Supabase location) or `public`:
+
+```sql
+SELECT extnamespace::regnamespace AS extension_schema
+FROM pg_extension
+WHERE extname = 'pgcrypto';
+```
+
+If no row is returned, enable it with `CREATE EXTENSION pgcrypto WITH SCHEMA extensions;`. If another schema is returned, inspect that installation before applying the repair; migration `024` does not relocate extensions.
 
 ### 3. Environment
 
@@ -67,6 +79,8 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm start` | Serve production build |
 | `npm test` | Run unit / regression tests |
 | `npm run lint` | ESLint |
+
+The password database regression tests can also run independently with `node --test tests/private-competitions-db.test.mjs`. They require local PostgreSQL tools (`pg_config`, `initdb`, `pg_ctl`, and `psql`) and `pgcrypto`, and must run as a non-root user. They start an isolated temporary database with Unix-socket access only, apply the migrations, and clean up afterward. They never connect to your configured Supabase project and report a skip if the local tools are unavailable.
 
 ## Project Structure
 
