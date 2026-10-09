@@ -7,7 +7,7 @@ Built with **Next.js**, **Supabase**, and **cubing.js**.
 ## Features
 
 - **Accounts** — email/password auth via Supabase; **username** is the public identity (email is for sign-in only)
-- **Standard competitions** — 17 official WCA events, multi-round formats (Ao5 / Mo3), advancement rules, live leaderboards
+- **Standard competitions** — 15 timed WCA events, multi-round formats (Ao5 / Mo3), advancement rules, live leaderboards. Fewest Moves and Multi-Blind remain unavailable until their result models are supported
 - **Head-to-head** — single/double elimination brackets, best-of sets, bye propagation
 - **Scrambles** — WCA-compatible generation via `cubing.js`, with official-style 2D state visualizations
 - **Privacy** — public or password-protected private competitions
@@ -29,14 +29,14 @@ Built with **Next.js**, **Supabase**, and **cubing.js**.
 
 ### 1. Prerequisites
 
-- Node.js 22+
+- Node.js 22.3+
 - A [Supabase](https://supabase.com) project
 
 ### 2. Database
 
-Apply **all** SQL files in `supabase/migrations/` in order (`001` → `024`) via the Supabase SQL Editor, or link the project with the Supabase CLI and push migrations.
+Apply **all** SQL files in `supabase/migrations/` in order (`001` → `027`) via the Supabase SQL Editor, or link the project with the Supabase CLI and push migrations.
 
-If your database already has migrations through `023`, run only [migration 024](supabase/migrations/024_fix_competition_password_search_path.sql) in the SQL Editor of the Supabase project used by your deployed website. It fixes `function gen_salt(unknown) does not exist` during private competition creation and the related `crypt` error during password verification. It preserves existing passwords and privacy protections. Do not reapply `011`, which would replace newer privacy behavior with older function bodies. Deploying to Vercel does not apply this database repair.
+If your database already has migrations through `023`, apply [migration 024](supabase/migrations/024_fix_competition_password_search_path.sql) first, then `025`–`027` as described below, in the Supabase project used by your deployed website. Migration `024` fixes `function gen_salt(unknown) does not exist` during private competition creation and the related `crypt` error during password verification. It preserves existing passwords and privacy protections. Do not reapply `011`, which would replace newer privacy behavior with older function bodies. Deploying to Vercel does not apply these database repairs.
 
 Before applying the repair, confirm that `pgcrypto` is installed in `extensions` (the expected Supabase location) or `public`:
 
@@ -47,6 +47,8 @@ WHERE extname = 'pgcrypto';
 ```
 
 If no row is returned, enable it with `CREATE EXTENSION pgcrypto WITH SCHEMA extensions;`. If another schema is returned, inspect that installation before applying the repair; migration `024` does not relocate extensions.
+
+For a database already at `024`, apply `025`, `026`, and `027` **before deploying this application version**. These migrations revoke direct solve/tournament child writes, add validated transactional RPCs, and invalidate qualification after review changes. Older application versions cannot submit through the revoked paths. See [REPO_AUDIT.md](REPO_AUDIT.md) for deployment checks and historical-data review queries. Never replay older migrations over an existing database.
 
 ### 3. Environment
 
@@ -79,8 +81,9 @@ Open [http://localhost:3000](http://localhost:3000).
 | `npm start` | Serve production build |
 | `npm test` | Run unit / regression tests |
 | `npm run lint` | ESLint |
+| `npm run typecheck` | TypeScript checks |
 
-The password database regression tests can also run independently with `node --test tests/private-competitions-db.test.mjs`. They require local PostgreSQL tools (`pg_config`, `initdb`, `pg_ctl`, and `psql`) and `pgcrypto`, and must run as a non-root user. They start an isolated temporary database with Unix-socket access only, apply the migrations, and clean up afterward. They never connect to your configured Supabase project and report a skip if the local tools are unavailable.
+The database regression tests can also run independently with `node --import tsx --test tests/private-competitions-db.test.mjs`. They require local PostgreSQL tools (`pg_config`, `initdb`, `pg_ctl`, and `psql`) and `pgcrypto`, and must run as a non-root user. They start an isolated temporary database with Unix-socket access only, apply the migrations, and clean up afterward. They never connect to your configured Supabase project and report a skip if the local tools are unavailable.
 
 ## Project Structure
 

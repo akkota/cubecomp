@@ -146,14 +146,15 @@ export async function storeScramblesForRound(
 ): Promise<string[]> {
   const normalized = validateScrambleBatch(scrambles, scrambles.length);
 
-  const { data: existing } = await supabase
+  const { data: existing, error: readError } = await supabase
     .from('scrambles')
     .select('scramble')
     .eq('round_id', roundId)
     .order('scramble_number');
 
+  if (readError) throw new Error(`Failed to read scrambles: ${readError.message}`);
   if (existing && existing.length > 0) {
-    return existing.map((s) => s.scramble);
+    return validateScrambleBatch(existing.map((s) => s.scramble), normalized.length);
   }
 
   const { error } = await supabase.from('scrambles').insert(
@@ -166,12 +167,13 @@ export async function storeScramblesForRound(
 
   if (error) {
     if (error.code === '23505') {
-      const { data: raced } = await supabase
+      const { data: raced, error: raceError } = await supabase
         .from('scrambles')
         .select('scramble')
         .eq('round_id', roundId)
         .order('scramble_number');
-      if (raced) return raced.map((s) => s.scramble);
+      if (raceError) throw new Error(`Failed to read scrambles: ${raceError.message}`);
+      if (raced) return validateScrambleBatch(raced.map((s) => s.scramble), normalized.length);
     }
     throw new Error(`Failed to store scrambles: ${error.message}`);
   }
@@ -191,14 +193,15 @@ export async function generateAndStoreScrambles(
 ): Promise<string[]> {
   cubingEventForAppEvent(eventKey);
 
-  const { data: existing } = await supabase
+  const { data: existing, error: readError } = await supabase
     .from('scrambles')
     .select('scramble')
     .eq('round_id', roundId)
     .order('scramble_number');
 
+  if (readError) throw new Error(`Failed to read scrambles: ${readError.message}`);
   if (existing && existing.length > 0) {
-    return existing.map((s) => s.scramble);
+    return validateScrambleBatch(existing.map((s) => s.scramble), solveCount);
   }
 
   const scrambles = await generateScrambles(eventKey, solveCount);

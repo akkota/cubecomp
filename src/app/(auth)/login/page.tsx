@@ -1,3 +1,4 @@
+import { safeRedirectPath } from '@/lib/safe-redirect';
 import { LoginForm } from '@/components/auth/login-form';
 
 export default async function LoginPage({
@@ -8,7 +9,7 @@ export default async function LoginPage({
   const params = await searchParams;
   const raw = params.next || params.redirect || '/dashboard';
   // Only allow same-origin relative paths
-  const redirectTo = raw.startsWith('/') && !raw.startsWith('//') ? raw : '/dashboard';
+  const redirectTo = safeRedirectPath(raw);
 
   return (
     <div className="flex min-h-[80vh] items-center justify-center">

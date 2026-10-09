@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import tsx --test tests/*.mjs"
+    "test": "node --import tsx --test tests/*.mjs",
+    "typecheck": "tsc --noEmit --incremental false"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -20,11 +21,10 @@
     "clsx": "^2.1.1",
     "cubing": "^0.63.3",
     "lucide-react": "^1.26.0",
-    "next": "16.2.11",
+    "next": "16.4.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hook-form": "^7.82.0",
-    "shadcn": "^4.14.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
     "three": "^0.185.1",
@@ -38,10 +38,13 @@
     "@types/react-dom": "^19",
     "@types/three": "^0.185.1",
     "eslint": "^9",
-    "eslint-config-next": "16.2.11",
+    "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
-    "tsx": "^4.20.6",
-    "typescript": "^5"
+    "typescript": "^5",
+    "shadcn": "^4.21.4"
+  },
+  "engines": {
+    "node": ">=22.3.0"
   }
 }

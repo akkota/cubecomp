@@ -1,16 +1,19 @@
 'use client';
 
 import { useMemo } from 'react';
+import type { TournamentMatch, TournamentParticipant } from '@/types/database';
+type BracketMatch = Pick<TournamentMatch, 'id' | 'bracket_type' | 'bracket_round' | 'match_number' | 'competitor1_id' | 'competitor2_id' | 'competitor1_sets_won' | 'competitor2_sets_won' | 'winner_id' | 'status' | 'auto_advance'>;
+type BracketParticipant = Pick<TournamentParticipant, 'id' | 'display_name_snapshot' | 'seed'>;
 
 interface BracketViewProps {
-  matches: any[];
-  participants: any[];
+  matches: BracketMatch[];
+  participants: BracketParticipant[];
   tournamentType: 'single' | 'double';
   selectedMatchId?: string | null;
-  onMatchClick?: (match: any) => void;
+  onMatchClick?: (match: BracketMatch) => void;
 }
 
-type RoundGroup = { round: number; matches: any[]; label: string };
+type RoundGroup = { round: number; matches: BracketMatch[]; label: string };
 
 const CARD_H = 94;
 const GAP = 20;
@@ -30,8 +33,8 @@ function roundLabel(round: number, totalRounds: number, kind: 'winners' | 'loser
   return `Round of ${bracketSize}`;
 }
 
-function groupByRound(ms: any[]): { round: number; matches: any[] }[] {
-  const rounds: Record<number, any[]> = {};
+function groupByRound(ms: BracketMatch[]): { round: number; matches: BracketMatch[] }[] {
+  const rounds: Record<number, BracketMatch[]> = {};
   for (const m of ms) {
     if (!rounds[m.bracket_round]) rounds[m.bracket_round] = [];
     rounds[m.bracket_round].push(m);
@@ -164,9 +167,9 @@ function BracketTree({
 }: {
   title?: string;
   rounds: RoundGroup[];
-  getParticipant: (id: string | null) => any;
+  getParticipant: (id: string | null) => BracketParticipant | null;
   selectedMatchId?: string | null;
-  onMatchClick?: (match: any) => void;
+  onMatchClick?: (match: BracketMatch) => void;
   accent: 'winners' | 'losers' | 'final';
 }) {
   if (rounds.length === 0) return null;
@@ -256,9 +259,9 @@ function MobileRoundList({
   onMatchClick,
 }: {
   sections: { title: string | null; rounds: RoundGroup[] }[];
-  getParticipant: (id: string | null) => any;
+  getParticipant: (id: string | null) => BracketParticipant | null;
   selectedMatchId?: string | null;
-  onMatchClick?: (match: any) => void;
+  onMatchClick?: (match: BracketMatch) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -307,8 +310,8 @@ function MatchCard({
   fullWidth,
   selected,
 }: {
-  match: any;
-  getParticipant: (id: string | null) => any;
+  match: BracketMatch;
+  getParticipant: (id: string | null) => BracketParticipant | null;
   onClick?: () => void;
   accent: 'winners' | 'losers' | 'final';
   fullWidth?: boolean;

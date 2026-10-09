@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -24,11 +24,14 @@ import { toast } from 'sonner';
 import { CompetitionSection } from '@/components/tournament/competition-section';
 import { Trophy, Users, Lock, Calendar, ArrowRight, CuboidIcon as CubeIcon, UserPlus, Globe, Swords } from 'lucide-react';
 
+import type { Competition, CompetitionEvent, Round } from '@/types/database';
+
 export default function CompetitionDetailPage() {
+  const router = useRouter();
   const { id } = useParams<{ id: string }>();
-  const [competition, setCompetition] = useState<any>(null);
-  const [events, setEvents] = useState<any[]>([]);
-  const [rounds, setRounds] = useState<any[]>([]);
+  const [competition, setCompetition] = useState<Competition | null>(null);
+  const [events, setEvents] = useState<CompetitionEvent[]>([]);
+  const [rounds, setRounds] = useState<Round[]>([]);
   const [roundParticipation, setRoundParticipation] = useState<Set<string>>(new Set());
   const [isOwner, setIsOwner] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -133,7 +136,7 @@ export default function CompetitionDetailPage() {
       setLoading(false);
     };
     fetchData();
-  }, [id]);
+  }, [id, supabase]);
 
   const handleRegisterClick = () => {
     if (!competition) return;
@@ -207,7 +210,7 @@ export default function CompetitionDetailPage() {
   });
   const isPrivate = competition.visibility === 'private';
 
-  const getRoundAccess = (round: any): { clickable: boolean; badge: { label: string; variant: string } } => {
+  const getRoundAccess = (round: Round): { clickable: boolean; badge: { label: string; variant: 'default' | 'destructive' | 'secondary' | 'outline' } } => {
     if (isOwner || isAdmin) {
       return {
         clickable: true,
@@ -331,7 +334,7 @@ export default function CompetitionDetailPage() {
               </Badge>
             )}
             {(isOwner || isAdmin) && (
-              <Button variant="outline" size="sm" onClick={() => window.location.href = `/competitions/${id}/admin`}>
+              <Button variant="outline" size="sm" onClick={() => router.push(`/competitions/${id}/admin`)}>
                 Manage Competition
               </Button>
             )}
@@ -389,8 +392,7 @@ export default function CompetitionDetailPage() {
                                 handleRegisterClick();
                                 return;
                               }
-                              window.location.href =
-                                `/competitions/${id}/events/${cEvent.event_key}/round/${round.round_number}`;
+                              router.push(`/competitions/${id}/events/${cEvent.event_key}/round/${round.round_number}`);
                             }}
                           >
                             <div className="flex min-w-0 items-center gap-3">
@@ -398,7 +400,7 @@ export default function CompetitionDetailPage() {
                               {!access.clickable && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
                             </div>
                             <div className="flex shrink-0 items-center gap-2.5">
-                              <Badge variant={access.badge.variant as any}>
+                              <Badge variant={access.badge.variant}>
                                 {access.badge.label}
                               </Badge>
                               {access.clickable && (

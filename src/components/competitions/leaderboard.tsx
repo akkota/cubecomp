@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { fetchAllPages } from "@/lib/pagination";
 import { createClient } from "@/lib/supabase/client";
 import {
   calculateResult,
@@ -43,6 +44,7 @@ type LeaderboardRow = {
 
 export function RoundLeaderboard({ roundId, format, solveCount }: Props) {
   const [solves, setSolves] = useState<LeaderboardRow[]>([]);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [live, setLive] = useState(false);
   const [verificationMap, setVerificationMap] = useState<Map<
@@ -53,18 +55,10 @@ export function RoundLeaderboard({ roundId, format, solveCount }: Props) {
 
   const fetchData = useCallback(async () => {
     const supabase = createClient();
-    const { data } = await supabase
+    const data = await fetchAllPages((from, to) => supabase
       .from("solves")
-      .select(
-        "*,competitor:competitor_id(*,user:user_id(id,username,display_name))",
-      )
-      .eq("round_id", roundId)
-      .order("competitor_id")
-      .order("solve_number");
-    if (!data) {
-      setLoading(false);
-      return;
-    }
+      .select("*,competitor:competitor_id(*,user:user_id(id,username,display_name))")
+      .eq("round_id", roundId).order("competitor_id").order("solve_number").order("id").range(from, to));
 
     const timesByCompetitor = new Map<string, (number | null)[]>();
     const metaByCompetitor = new Map<
@@ -119,9 +113,8 @@ export function RoundLeaderboard({ roundId, format, solveCount }: Props) {
     setSolves(rows);
     setLoading(false);
 
-    const { data: subs } = await supabase.rpc("get_round_verification_statuses", {
-      p_round_id: roundId,
-    });
+    const subs = await fetchAllPages<{ competitor_id: string; verification_status: string }>((from, to) =>
+      supabase.rpc("get_round_verification_statuses", { p_round_id: roundId }).order('competitor_id').range(from, to));
     const vm = new Map<string, string>();
     for (const s of subs ?? []) {
       if (s.verification_status && s.verification_status !== "none") {
@@ -129,42 +122,33 @@ export function RoundLeaderboard({ roundId, format, solveCount }: Props) {
       }
     }
     setVerificationMap(vm);
+    setError("");
   }, [roundId, format]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  useEffect(() => {
+    const refresh = () => void fetchData().catch(e => setError(e.message)).finally(() => setLoading(false));
+    const initial = setTimeout(refresh, 0);
+    const poll = setInterval(refresh, 10_000);
+    window.addEventListener("focus", refresh);
     const supabase = createClient();
-    const channel = supabase
-      .channel(`leaderboard-${roundId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "solves",
-          filter: `round_id=eq.${roundId}`,
-        },
-        () => {
-          if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-          refreshTimerRef.current = setTimeout(() => {
-            fetchData();
-            setLive(true);
-          }, 300);
-        },
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") setLive(true);
-      });
-
+    const scheduleRefresh = () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(refresh, 300);
+    };
+    const channel = supabase.channel(`leaderboard-${roundId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "solves", filter: `round_id=eq.${roundId}` }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "round_submissions", filter: `round_id=eq.${roundId}` }, scheduleRefresh)
+      .subscribe(status => setLive(status === "SUBSCRIBED"));
     return () => {
-      supabase.removeChannel(channel);
+      clearTimeout(initial);
+      clearInterval(poll);
+      window.removeEventListener("focus", refresh);
+      void supabase.removeChannel(channel);
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     };
   }, [roundId, fetchData]);
 
+  if (error) return <p role="alert" className="py-4 text-sm text-destructive">Unable to refresh results: {error}</p>;
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">

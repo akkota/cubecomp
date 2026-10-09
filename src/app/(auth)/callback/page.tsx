@@ -1,11 +1,9 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 
 export default function AuthCallbackPage() {
-  const router = useRouter();
   const ran = useRef(false);
 
   useEffect(() => {
@@ -22,13 +20,13 @@ export default function AuthCallbackPage() {
       if (session) {
         // Use window.location for a full page load so the middleware
         // picks up the freshly-set session cookies.
-        window.location.href = '/dashboard';
+        window.location.replace(new URL('/dashboard', window.location.origin).href);
       } else {
         // No session — redirect to login with a message
-        window.location.href = '/login?error=verification_failed';
+        window.location.replace(new URL('/login?error=verification_failed', window.location.origin).href);
       }
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex min-h-[80vh] items-center justify-center">

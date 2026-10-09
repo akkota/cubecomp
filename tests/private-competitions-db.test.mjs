@@ -3,12 +3,13 @@
  * Only the Supabase auth schema/roles are shimmed; application SQL is unchanged.
  */
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
+import { auditDatabaseTests } from './helpers/audit-database.mjs';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -19,6 +20,8 @@ const available = bin && ['initdb', 'pg_ctl', 'psql'].every(name => existsSync(j
 const skip = !available
   ? 'Local PostgreSQL tools are required for database regression tests'
   : process.getuid?.() === 0 ? 'initdb requires a non-root user' : false;
+
+if (skip && process.env.REQUIRE_DB_TESTS === '1') throw new Error(String(skip));
 
 function run(command, args, input) {
   // Ignore ambient libpq configuration so these tests always use their own
@@ -32,7 +35,7 @@ function run(command, args, input) {
 
 const quote = value => value === null ? 'NULL' : `'${value.replaceAll("'", "''")}'`;
 
-test('competition password RPCs resolve pgcrypto after ordered migrations', { skip, timeout: 60_000 }, async t => {
+test('competition password RPCs resolve pgcrypto after ordered migrations', { skip, timeout: 120_000 }, async t => {
   const directory = mkdtempSync(join(tmpdir(), 'cubecomp-passwords-'));
   const data = join(directory, 'data');
   let started = false;
@@ -47,6 +50,14 @@ test('competition password RPCs resolve pgcrypto after ordered migrations', { sk
     ${query}
     COMMIT;
   `);
+  const asUserAsync = (database, user, query) => new Promise((resolve, reject) => {
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('PG')));
+    const child = spawn(join(bin, 'psql'), ['-X', '-q', '-A', '-t', '--set=ON_ERROR_STOP=1', '--host', directory, '--username', 'postgres', '--dbname', database], { env });
+    let output = ''; let error = '';
+    child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { error += chunk; });
+    child.on('error', reject); child.on('close', code => code === 0 ? resolve(output.trim()) : reject(new Error(error)));
+    child.stdin.end(`BEGIN; SET LOCAL ROLE authenticated; SET LOCAL "request.jwt.claim.sub"=${quote(user)}; ${query} COMMIT;`);
+  });
   const rpc = (database, user, name, ...args) => JSON.parse(asUser(database, user,
     `SELECT public.${name}(${args.map(quote).join(', ')});`));
   const migrationFiles = readdirSync(migrations).filter(name => name.endsWith('.sql')).sort();
@@ -124,12 +135,14 @@ test('competition password RPCs resolve pgcrypto after ordered migrations', { sk
               'public.configure_competition_visibility(uuid,text,text)'::regprocedure,
               'public.unlock_private_competition(uuid,text)'::regprocedure);`);
           const before = definitions();
-          for (const file of migrationFiles.filter(file => file >= repair)) apply(database, file);
+          apply(database, repair);
           await t.test('repair preserves function bodies, security mode, permissions, and existing hashes', () => {
             assert.equal(definitions(), before);
             assert.equal(passwordHash(existing), existingHash);
           });
         }
+
+        if (mode === 'upgrade') for (const file of migrationFiles.filter(file => file > repair)) apply(database, file);
 
         await t.test('an existing private password still unlocks', () => {
           expectSuccess(unlock(existing, 'existing-password'));
@@ -178,6 +191,8 @@ test('competition password RPCs resolve pgcrypto after ordered migrations', { sk
           expectSuccess(rpc(database, participant, 'register_for_competition', privateId, 'registration-password'));
           expectSuccess(rpc(database, participant, 'register_for_competition', createCompetition(), null));
         });
+
+        await auditDatabaseTests(t, { sql, asUser, asUserAsync, rpc, database, owner, participant });
 
         await t.test('authentication, admin authorization, and secret permissions remain enforced', () => {
           const id = createCompetition();

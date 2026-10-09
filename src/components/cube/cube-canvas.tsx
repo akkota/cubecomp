@@ -51,8 +51,6 @@ function Cubie({ cx, cy, cz }: { cx: number; cy: number; cz: number }) {
       // Is this face on the outside of the 3x3 cube?
       if (nx < -0.5 || nx > 0.5 || ny < -0.5 || ny > 0.5 || nz < -0.5 || nz > 0.5) {
         const fk = faceKey(dx, dy, dz);
-        const half = CUBIE_SIZE / 2 - STICKER_INSET;
-        const stickHalf = half;
         const faceOffset = CUBIE_SIZE / 2 + STICKER_DEPTH;
 
         // Position the sticker plane just above the face
@@ -113,7 +111,6 @@ function Cubie({ cx, cy, cz }: { cx: number; cy: number; cz: number }) {
 
 function RubiksCube({ mouseRef, reduced }: { mouseRef: React.MutableRefObject<{ x: number; y: number }>; reduced: boolean }) {
   const groupRef = useRef<THREE.Group>(null);
-  const targetRot = useRef({ x: -0.5, y: -0.55, z: 0.1 });
   const autoAngle = useRef(0);
 
   useFrame((_, delta) => {

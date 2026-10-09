@@ -1,5 +1,6 @@
 'use server';
 
+import { fetchAllPages } from '@/lib/pagination';
 import { createClient } from '@/lib/supabase/server';
 import { generateBracket, seededShuffle } from '@/lib/tournament/bracket-engine';
 
@@ -12,14 +13,8 @@ function rpcPayloadOk(data: unknown): { ok: true } | { ok: false; error: string 
     const err = (data as { error?: string }).error;
     return { ok: false, error: err ?? 'Operation failed' };
   }
+  if (!data || typeof data !== 'object' || !('success' in data) || data.success !== true) return { ok: false, error: 'Invalid operation response' };
   return { ok: true };
-}
-
-interface ParticipantDef {
-  competitor_id: string;
-  seed: number;
-  qualifying_average: number | null;
-  initial_slot: number;
 }
 
 // ─── Create Tournament ───────────────────────────────────────────────
@@ -78,6 +73,8 @@ export async function createTournamentAction(
       .limit(1);
     eventKey = events?.[0]?.event_key ?? null;
   }
+
+  if (!eventKey || ['333fm', '333mbf'].includes(eventKey)) return { success: false, error: 'This event requires an unsupported result type' };
 
   const { data: insertData, error: insertError } = await supabase.from('tournaments').insert({
     competition_id: competitionId,
@@ -141,7 +138,10 @@ export async function updateTournamentConfigAction(
   if (data.seedingType !== undefined) patch.seeding_type = data.seedingType;
   if (data.matchFormat !== undefined) patch.match_format = data.matchFormat;
   if (data.scrambleSource !== undefined) patch.scramble_source = data.scrambleSource;
-  if (data.eventKey !== undefined) patch.event_key = data.eventKey;
+  if (data.eventKey !== undefined) {
+    if (!data.eventKey || ['333fm', '333mbf'].includes(data.eventKey)) return { success: false, error: 'Unsupported result type' };
+    patch.event_key = data.eventKey;
+  }
 
   const { error } = await supabase.from('tournaments').update(patch).eq('id', tournamentId);
   if (error) return { success: false, error: error.message };
@@ -165,57 +165,25 @@ export async function setParticipantsAction(
   }
   if (competitorIds.length < 2) return { success: false, error: 'Need at least 2 competitors' };
 
-  const { data: validComp } = await supabase
-    .from('competitors').select('id, user_id, competition_id')
-    .in('id', competitorIds).eq('competition_id', t.competition_id);
-  if (!validComp || validComp.length !== competitorIds.length) {
-    return { success: false, error: 'Competitors must be registered in this competition' };
+  if (competitorIds.length > 1024 || new Set(competitorIds).size !== competitorIds.length) {
+    return { success: false, error: 'Select 2 to 1024 distinct participants' };
   }
-  const userIds = [...new Set(validComp.map(c => c.user_id))];
-  const { data: profiles } = await supabase.from('profiles').select('id, username, display_name').in('id', userIds);
-  const nameMap = new Map(
-    (profiles ?? []).map((p: any) => [p.id, p.username ? `@${p.username}` : 'Unknown']),
-  );
-  const compMap = new Map(validComp.map(c => [c.id, c]));
-
-  await supabase.from('tournament_participants').delete().eq('tournament_id', tournamentId);
-
-  let ordered = competitorIds;
-  if (t.seeding_type === 'seeded') {
-    ordered = [...competitorIds].sort((a, b) => {
-      const aAvg = qualifyingAverages[a];
-      const bAvg = qualifyingAverages[b];
-      const aVal = aAvg != null && aAvg > 0 ? aAvg : Number.POSITIVE_INFINITY;
-      const bVal = bAvg != null && bAvg > 0 ? bAvg : Number.POSITIVE_INFINITY;
-      if (aVal !== bVal) return aVal - bVal;
-      return a.localeCompare(b);
-    });
-  } else {
-    // Unseeded: deterministic random order from a stored shuffle seed
-    const shuffleSeed = (t.shuffle_seed as number | null) ?? (Date.now() & 0xffffffff);
-    if (t.shuffle_seed == null) {
-      await supabase.from('tournaments').update({ shuffle_seed: shuffleSeed }).eq('id', tournamentId);
+  for (const value of Object.values(qualifyingAverages)) {
+    if (!Number.isInteger(value) || value <= 0 || value > 2147483647) {
+      return { success: false, error: 'Qualifying averages must be positive integer milliseconds' };
     }
-    const order = seededShuffle(competitorIds.length, shuffleSeed);
-    ordered = order.map(i => competitorIds[i - 1]);
   }
-
-  for (let i = 0; i < ordered.length; i++) {
-    const cid = ordered[i];
-    const comp = compMap.get(cid);
-    if (!comp) continue;
-    const avg = qualifyingAverages[cid];
-    await supabase.from('tournament_participants').insert({
-      tournament_id: tournamentId, competitor_id: cid,
-      display_name_snapshot: nameMap.get(comp.user_id) || 'Unknown',
-      seed: i + 1,
-      qualifying_average: avg != null && avg > 0 ? avg : null,
-      initial_slot: i + 1,
-    });
-  }
-
-  await supabase.from('tournaments').update({ competitor_count: ordered.length }).eq('id', tournamentId);
-  return { success: true, data: { count: ordered.length } };
+  const shuffleSeed = t.shuffle_seed ?? (Date.now() & 0xffffffff);
+  const ordered = t.seeding_type === 'seeded'
+    ? [...competitorIds].sort((a, b) => (qualifyingAverages[a] ?? Infinity) - (qualifyingAverages[b] ?? Infinity) || a.localeCompare(b))
+    : seededShuffle(competitorIds.length, shuffleSeed).map(i => competitorIds[i - 1]);
+  const { data, error } = await supabase.rpc('replace_tournament_participants', {
+    p_tournament_id: tournamentId, p_shuffle_seed: shuffleSeed,
+    p_participants: ordered.map(id => ({ competitor_id: id, qualifying_average: qualifyingAverages[id] ?? null })),
+  });
+  if (error) return { success: false, error: error.message };
+  const result = rpcPayloadOk(data);
+  return result.ok ? { success: true, data: { count: ordered.length } } : { success: false, error: result.error };
 }
 
 // ─── Generate Bracket ────────────────────────────────────────────────
@@ -232,11 +200,12 @@ export async function generateBracketAction(tournamentId: string): Promise<Actio
   }
 
   // Fetch competitors
-  const { data: comps } = await supabase
-    .from('tournament_participants')
-    .select('id, competitor_id, seed, qualifying_average, initial_slot')
-    .eq('tournament_id', tournamentId)
-    .order('initial_slot');
+  let comps;
+  try {
+    comps = await fetchAllPages((from, to) => supabase.from('tournament_participants')
+      .select('id, competitor_id, seed, qualifying_average, initial_slot')
+      .eq('tournament_id', tournamentId).order('initial_slot').order('id').range(from, to));
+  } catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Could not load participants' }; }
 
   if (!comps || comps.length < 2) return { success: false, error: 'Need at least 2 participants' };
 
@@ -287,285 +256,53 @@ export async function generateBracketAction(tournamentId: string): Promise<Actio
 
 // ─── Activate Tournament ─────────────────────────────────────────────
 
-async function startMatchPlay(
-  supabase: any,
-  matchId: string,
-  eventKey: string | null,
-  scrambleSource: string,
-  precomputedScramble?: string | null,
-): Promise<{ success: true } | { success: false; error: string }> {
-  const { error: matchErr } = await supabase
-    .from('tournament_matches')
-    .update({ status: 'active' })
-    .eq('id', matchId);
-  if (matchErr) return { success: false, error: matchErr.message };
-
-  const { data: existingSet } = await supabase
-    .from('tournament_match_sets')
-    .select('id')
-    .eq('match_id', matchId)
-    .eq('status', 'active')
-    .maybeSingle();
-
-  let setId = existingSet?.id as string | undefined;
-  if (!setId) {
-    const { data: setRow, error: setErr } = await supabase
-      .from('tournament_match_sets')
-      .insert({ match_id: matchId, set_number: 1, status: 'active' })
-      .select('id')
-      .single();
-    if (setErr || !setRow) {
-      return { success: false, error: setErr?.message ?? 'Failed to create set' };
-    }
-    setId = setRow.id;
-  }
-
-  const { data: pendingSolve } = await supabase
-    .from('tournament_match_solves')
-    .select('id')
-    .eq('set_id', setId)
-    .in('status', ['pending', 'active', 'tied'])
-    .limit(1)
-    .maybeSingle();
-
-  if (!pendingSolve) {
-    let scramble: string | null =
-      typeof precomputedScramble === 'string' ? precomputedScramble : null;
-    if (scramble == null && scrambleSource === 'generated' && eventKey) {
-      try {
-        const { generateScramble } = await import('@/lib/scramble');
-        scramble = await generateScramble(eventKey);
-      } catch {
-        scramble = null;
-      }
-    }
-    const { error: solveErr } = await supabase.from('tournament_match_solves').insert({
-      set_id: setId,
-      solve_number: 1,
-      re_solve_attempt: 0,
-      scramble,
-      status: 'pending',
-    });
-    if (solveErr) return { success: false, error: solveErr.message };
-  }
-
-  return { success: true };
-}
-
 export async function activateTournamentAction(tournamentId: string): Promise<ActionResult> {
   const supabase = await createClient();
   const auth = await checkAuthAdmin(supabase, tournamentId);
   if (!auth.ok) return auth.result;
-
-  const { data: t } = await supabase
-    .from('tournaments')
-    .select('status, event_key, scramble_source')
-    .eq('id', tournamentId)
-    .single();
-  if (!t) return { success: false, error: 'Tournament not found' };
-  if (t.status !== 'ready') {
-    return { success: false, error: 'Tournament must be ready before starting' };
-  }
-
-  const { error } = await supabase.from('tournaments').update({ status: 'active' }).eq('id', tournamentId);
-  if (error) return { success: false, error: error.message };
-
-  // Start every first-round playable match — multiple can be live at once.
-  // Batch-generate scrambles once so we warm the solver once instead of
-  // paying cold-start cost per match.
-  const { data: playable } = await supabase
-    .from('tournament_matches')
-    .select('id')
-    .eq('tournament_id', tournamentId)
-    .eq('auto_advance', false)
-    .eq('status', 'pending')
-    .eq('bracket_round', 1)
-    .not('competitor1_id', 'is', null)
-    .not('competitor2_id', 'is', null)
-    .order('bracket_index');
-
-  const matches = playable ?? [];
-  let batch: Array<string | null> = matches.map(() => null);
-  if (t.scramble_source === 'generated' && t.event_key && matches.length > 0) {
-    try {
-      const { generateScrambles } = await import('@/lib/scramble');
-      const texts = await generateScrambles(t.event_key, matches.length);
-      batch = texts;
-    } catch {
-      batch = matches.map(() => null);
-    }
-  }
-
-  for (let i = 0; i < matches.length; i += 1) {
-    const started = await startMatchPlay(
-      supabase,
-      matches[i].id,
-      t.event_key,
-      t.scramble_source,
-      batch[i],
-    );
-    if (!started.success) return started;
-  }
-
-  return { success: true };
+  const { data: t, error: tError } = await supabase.from('tournaments').select('status,event_key,scramble_source').eq('id', tournamentId).single();
+  if (tError || !t) return { success: false, error: tError?.message ?? 'Tournament not found' };
+  if (t.status === 'active') return { success: true };
+  if (t.status !== 'ready') return { success: false, error: 'Tournament must be ready' };
+  const { data: matches, error: matchError } = await supabase.from('tournament_matches').select('id')
+    .eq('tournament_id', tournamentId).eq('auto_advance', false).eq('status', 'pending').eq('bracket_round', 1)
+    .not('competitor1_id', 'is', null).not('competitor2_id', 'is', null).order('bracket_index');
+  if (matchError) return { success: false, error: matchError.message };
+  try {
+    const { generateScrambles } = await import('@/lib/scramble');
+    const scrambles = t.scramble_source === 'generated' && matches?.length
+      ? await generateScrambles(t.event_key, matches.length) : [];
+    const { data, error } = await supabase.rpc('activate_tournament', {
+      p_tournament_id: tournamentId,
+      p_matches: (matches ?? []).map((m, i) => ({ id: m.id, scramble: scrambles[i] ?? null })),
+    });
+    if (error) return { success: false, error: error.message };
+    const result = rpcPayloadOk(data);
+    return result.ok ? { success: true } : { success: false, error: result.error };
+  } catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Scramble generation failed' }; }
 }
 
-/** Make a pending match live (multiple live matches allowed). */
 export async function makeMatchLiveAction(tournamentId: string, matchId: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const auth = await checkAuthAdmin(supabase, tournamentId);
-  if (!auth.ok) return auth.result;
-
-  const { data: t } = await supabase
-    .from('tournaments')
-    .select('status, event_key, scramble_source')
-    .eq('id', tournamentId)
-    .single();
-  if (!t || t.status !== 'active') {
-    return { success: false, error: 'Tournament must be active' };
-  }
-
-  const { data: match } = await supabase
-    .from('tournament_matches')
-    .select('*')
-    .eq('id', matchId)
-    .eq('tournament_id', tournamentId)
-    .single();
-  if (!match) return { success: false, error: 'Match not found' };
-  if (match.auto_advance) return { success: false, error: 'Bye matches cannot be made live' };
-  if (match.status === 'active') return { success: true, data: { alreadyLive: true } };
-  if (match.status !== 'pending') {
-    return { success: false, error: 'Only pending matches can be made live' };
-  }
-  if (!match.competitor1_id || !match.competitor2_id) {
-    return { success: false, error: 'Both competitors must be set before making this match live' };
-  }
-
-  return startMatchPlay(supabase, matchId, t.event_key, t.scramble_source);
+  return ensureActiveMatchPlayableAction(tournamentId, matchId);
 }
 
-/** Ensure an active match has an active set + pending solve so results can be entered. */
+/** The RPC serializes preparation and never overwrites an existing scramble. */
 export async function ensureActiveMatchPlayableAction(tournamentId: string, matchId: string): Promise<ActionResult> {
   const supabase = await createClient();
   const auth = await checkAuthAdmin(supabase, tournamentId);
   if (!auth.ok) return auth.result;
-
-  const { data: t } = await supabase
-    .from('tournaments')
-    .select('status, event_key, scramble_source')
-    .eq('id', tournamentId)
-    .single();
-  if (!t || t.status !== 'active') {
-    return { success: false, error: 'Tournament is not active' };
-  }
-
-  const { data: match } = await supabase
-    .from('tournament_matches')
-    .select('*')
-    .eq('id', matchId)
-    .eq('tournament_id', tournamentId)
-    .single();
-  if (!match) return { success: false, error: 'Match not found' };
-  if (match.auto_advance) return { success: false, error: 'Bye matches cannot be played' };
-  if (match.status !== 'active') {
-    return { success: false, error: 'Match is not active' };
-  }
-  if (!match.competitor1_id || !match.competitor2_id) {
-    return { success: false, error: 'Both competitors required' };
-  }
-
-  let { data: setRow } = await supabase
-    .from('tournament_match_sets')
-    .select('*')
-    .eq('match_id', matchId)
-    .eq('status', 'active')
-    .order('set_number', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!setRow) {
-    const nextSetNumber =
-      ((
-        await supabase
-          .from('tournament_match_sets')
-          .select('set_number')
-          .eq('match_id', matchId)
-          .order('set_number', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      ).data?.set_number ?? 0) + 1;
-
-    const inserted = await supabase
-      .from('tournament_match_sets')
-      .insert({
-        match_id: matchId,
-        set_number: nextSetNumber,
-        status: 'active',
-      })
-      .select('*')
-      .single();
-    if (inserted.error || !inserted.data) {
-      return { success: false, error: inserted.error?.message ?? 'Failed to create set' };
-    }
-    setRow = inserted.data;
-  }
-
-  const { data: pendingSolve } = await supabase
-    .from('tournament_match_solves')
-    .select('id, scramble')
-    .eq('set_id', setRow.id)
-    .in('status', ['pending', 'active', 'tied'])
-    .order('solve_number', { ascending: false })
-    .order('re_solve_attempt', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!pendingSolve) {
-    const completedCount =
-      (
-        await supabase
-          .from('tournament_match_solves')
-          .select('id', { count: 'exact', head: true })
-          .eq('set_id', setRow.id)
-          .eq('status', 'completed')
-      ).count ?? 0;
-
-    let scramble: string | null = null;
-    if (t.scramble_source === 'generated' && t.event_key) {
-      try {
-        const { generateScramble } = await import('@/lib/scramble');
-        scramble = await generateScramble(t.event_key);
-      } catch {
-        scramble = null;
-      }
-    }
-
-    const { error: solveError } = await supabase.from('tournament_match_solves').insert({
-      set_id: setRow.id,
-      solve_number: completedCount + 1,
-      re_solve_attempt: 0,
-      scramble,
-      status: 'pending',
+  const { data: t, error: tError } = await supabase.from('tournaments').select('event_key,scramble_source').eq('id', tournamentId).single();
+  if (tError || !t) return { success: false, error: tError?.message ?? 'Tournament not found' };
+  try {
+    const { generateScramble } = await import('@/lib/scramble');
+    const scramble = t.scramble_source === 'generated' ? await generateScramble(t.event_key) : null;
+    const { data, error } = await supabase.rpc('prepare_tournament_match', {
+      p_tournament_id: tournamentId, p_match_id: matchId, p_scramble: scramble,
     });
-    if (solveError) return { success: false, error: solveError.message };
-  } else if (!pendingSolve.scramble && t.scramble_source === 'generated' && t.event_key) {
-    // RPC-created next solves omit scramble — backfill once for the active attempt
-    try {
-      const { generateScramble } = await import('@/lib/scramble');
-      const scramble = await generateScramble(t.event_key);
-      if (scramble) {
-        await supabase
-          .from('tournament_match_solves')
-          .update({ scramble })
-          .eq('id', pendingSolve.id)
-          .is('scramble', null);
-      }
-    } catch {
-      // leave scramble null; admin can still enter times
-    }
-  }
-
-  return { success: true, data: { setId: setRow.id } };
+    if (error) return { success: false, error: error.message };
+    const result = rpcPayloadOk(data);
+    return result.ok ? { success: true, data } : { success: false, error: result.error };
+  } catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Scramble generation failed' }; }
 }
 
 // ─── Cancel Tournament ───────────────────────────────────────────────
@@ -676,7 +413,7 @@ export async function reSolveAction(
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-async function checkAdmin(supabase: any, competitionId: string, userId: string): Promise<boolean> {
+async function checkAdmin(supabase: Awaited<ReturnType<typeof createClient>>, competitionId: string, userId: string): Promise<boolean> {
   const { data: comp } = await supabase.from('competitions').select('created_by').eq('id', competitionId).single();
   if (!comp) return false;
   if (comp.created_by === userId) return true;
@@ -690,7 +427,7 @@ async function checkAdmin(supabase: any, competitionId: string, userId: string):
   return !!admin;
 }
 
-async function checkAuthAdmin(supabase: any, tournamentId: string): Promise<{ ok: boolean; result: ActionResult }> {
+async function checkAuthAdmin(supabase: Awaited<ReturnType<typeof createClient>>, tournamentId: string): Promise<{ ok: boolean; result: ActionResult }> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, result: { success: false, error: 'Not authenticated' } };
 

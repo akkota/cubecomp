@@ -16,7 +16,7 @@ import {
   type TimerState,
 } from '@/components/competitions/cube-timer';
 import { ScrambleCard } from '@/components/competitions/scramble-card';
-import { submitTimesAction } from '@/actions/submitTimes';
+import { submitTimesAction, submitEvidenceAction } from '@/actions/submitTimes';
 import {
   buildSolveInputs,
   formatAttemptValue,
@@ -239,21 +239,10 @@ export default function RoundPage() {
     setSubmitError(null);
 
     try {
-      // Save video URL if required
       if (competition?.require_verified_solves && videoUrl.trim()) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Not authenticated');
-        const { data: comp } = await supabase.from('competitors').select('id').eq('competition_id',params.id).eq('user_id',user.id).single();
-        if (comp) {
-          const { error: videoError } = await supabase.from('round_submissions').upsert({
-            round_id: activeRound.id,
-            competitor_id: comp.id,
-            video_url: videoUrl.trim(),
-            verification_status: 'pending',
-          }, { onConflict: 'round_id,competitor_id' });
-          if (videoError) throw new Error(`Failed to save video: ${videoError.message}`);
-          setVideoSubmitted(true);
-        }
+        const evidence = await submitEvidenceAction(activeRound.id, videoUrl);
+        if (!evidence.success) throw new Error(evidence.error);
+        setVideoSubmitted(true);
       }
 
       const result = await submitTimesAction(activeRound.id, params.id, currentValidation.solves);
@@ -496,7 +485,7 @@ export default function RoundPage() {
         )}
 
       {/* Video submission — required for verified solves */}
-      {accessState==='granted'&&round?.status==='active'&&!alreadySubmitted&&competition?.require_verified_solves&&(
+      {accessState==='granted'&&round?.status!=='pending'&&competition?.require_verified_solves&&(
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2"><Video className="h-4 w-4 text-cube-red"/>Video Verification</CardTitle>
@@ -513,6 +502,15 @@ export default function RoundPage() {
                   className="h-10 font-mono"
                 />
               </div>
+              <Button type="button" disabled={submitting || !videoUrl.trim()} onClick={async () => {
+                setSubmitting(true);
+                try {
+                  const result = await submitEvidenceAction(round.id, videoUrl);
+                  if (!result.success) toast.error(result.error);
+                  else { setVideoSubmitted(true); toast.success('Evidence submitted for review'); }
+                } catch (error) { toast.error(error instanceof Error ? error.message : 'Failed to save evidence'); }
+                finally { setSubmitting(false); }
+              }}>Save video</Button>
               {videoSubmitted && (
                 <Badge variant="secondary" className="gap-1 shrink-0">
                   <CheckCircle2 className="h-3.5 w-3.5 text-cube-green" /> Submitted

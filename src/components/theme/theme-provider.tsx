@@ -29,10 +29,10 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 function readInitialTheme(): ThemeId {
   if (typeof window === 'undefined') return DEFAULT_THEME_ID;
-  const stored =
-    localStorage.getItem(THEME_STORAGE_KEY) ??
-    localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
-  return resolveStoredThemeId(stored);
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY) ?? localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+    return resolveStoredThemeId(stored);
+  } catch { return DEFAULT_THEME_ID; }
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -41,6 +41,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const id = readInitialTheme();
+    // Hydrate browser storage after SSR so the first client render matches HTML.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setThemeId(id);
     applyThemeToDocument(id);
     setMounted(true);

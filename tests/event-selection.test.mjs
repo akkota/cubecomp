@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyEventSelection } from './helpers/event-selection.mjs';
+import { applyEventSelection } from '../src/lib/event-selection.ts';
 
 test('selecting an unselected event adds it', () => {
   const next = applyEventSelection([], '333', true, 'standard');

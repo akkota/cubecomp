@@ -1,4 +1,4 @@
-import { WCA_EVENTS, type WcaEventKey } from '@/lib/wca-events';
+import { WCA_EVENTS, type WcaEventKey } from './wca-events';
 
 export type EventFormat = 'average' | 'mean';
 

@@ -11,9 +11,11 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { createClient } from '@/lib/supabase/client';
 import { WCA_EVENTS } from '@/lib/wca-events';
-import { calculateResult, formatTime } from '@/lib/wca-events';
+import { formatTime } from '@/lib/wca-events';
 import { toast } from 'sonner';
-import { User, Award, Trophy, Clock, Bell, History, Save, Loader2 } from 'lucide-react';
+import type { User as AuthUser } from '@supabase/supabase-js';
+import type { Profile, Solve, Round, CompetitionEvent, Competition } from '@/types/database';
+import { User, Award, Trophy, Bell, History, Save, Loader2 } from 'lucide-react';
 
 type PBRecord = {
   event_key: string;
@@ -40,8 +42,8 @@ type SolveEntry = {
 };
 
 export default function ProfilePage() {
-  const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [pbs, setPbs] = useState<PBRecord[]>([]);
   const [history, setHistory] = useState<SolveEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +63,8 @@ export default function ProfilePage() {
       setUser(u);
 
       // Fetch or create profile
-      const { data: prof } = await supabase.from('profiles').select('*').eq('id', u.id).single();
+      const { data: prof, error: profileError } = await supabase.from('profiles').select('*').eq('id', u.id).single();
+      if (profileError) throw new Error(profileError.message);
       if (prof) {
         setProfile(prof);
         setDisplayName(prof.display_name || '');
@@ -71,96 +74,43 @@ export default function ProfilePage() {
         setNotifyPbBeaten(prof.notify_pb_beaten ?? false);
       }
 
-      // Fetch all solves from all competitions
-      const { data: competitorRecords } = await supabase
-        .from('competitors')
-        .select('id')
-        .eq('user_id', u.id);
+      const { data: stats, error: statsError } = await supabase.rpc('get_my_personal_bests');
+      if (statsError) throw new Error(statsError.message);
+      const records = (stats ?? []) as Array<Omit<PBRecord, 'event_name' | 'event_icon'>>;
+      setPbs(records.map(record => {
+        const event = WCA_EVENTS.find(e => e.key === record.event_key);
+        return { ...record, event_name: event?.name ?? record.event_key, event_icon: event?.icon ?? '?' };
+      }).sort((a, b) => a.event_name.localeCompare(b.event_name)));
+
+      // History is a deliberately bounded recent view; lifetime PBs come from SQL.
+      const { data: competitorRecords, error: competitorError } = await supabase
+        .from('competitors').select('id').eq('user_id', u.id);
+      if (competitorError) throw new Error(competitorError.message);
       const competitorIds = (competitorRecords ?? []).map(c => c.id);
-
-      if (competitorIds.length === 0) { setLoading(false); return; }
-
-      const { data: allSolves } = await supabase
-        .from('solves')
-        .select('*, round:round_id(round_number, competition_event:competition_event_id(event_key, competition:competition_id(name, id)))')
-        .in('competitor_id', competitorIds)
-        .order('submitted_at', { ascending: false })
-        .limit(200);
-
-      if (!allSolves) { setLoading(false); return; }
-
-      // Build solve history
-      const hist: SolveEntry[] = [];
-      for (const s of allSolves as any[]) {
-        const evt = s.round?.competition_event;
-        const wca = WCA_EVENTS.find(e => e.key === evt?.event_key);
-        const effectiveMs = s.penalty === 'DNF' ? null : s.penalty === '+2' && s.time_ms !== null ? s.time_ms + 2000 : s.time_ms;
-        hist.push({
-          id: s.id,
-          competition_name: evt?.competition?.name || '?',
-          competition_id: evt?.competition?.id || '',
-          event_key: evt?.event_key || '',
-          event_name: wca?.name || evt?.event_key || '?',
-          event_icon: wca?.icon || '?',
-          round_number: s.round?.round_number ?? 1,
-          solve_number: s.solve_number,
-          time_ms: effectiveMs,
-          penalty: s.penalty,
-          submitted_at: s.submitted_at,
-        });
+      if (competitorIds.length) {
+        const { data, error } = await supabase.from('solves')
+          .select('*, round:round_id(round_number, competition_event:competition_event_id(event_key, competition:competition_id(name, id)))')
+          .in('competitor_id', competitorIds).order('submitted_at', { ascending: false }).order('id').limit(50);
+        if (error) throw new Error(error.message);
+        type HistorySolve = Solve & { round: Pick<Round, 'round_number'> & {
+          competition_event: Pick<CompetitionEvent, 'event_key'> & { competition: Pick<Competition, 'id' | 'name'> };
+        } };
+        setHistory((data as unknown as HistorySolve[] ?? []).map(s => {
+          const evt = s.round?.competition_event;
+          const event = WCA_EVENTS.find(e => e.key === evt?.event_key);
+          return { id: s.id, competition_name: evt?.competition?.name ?? '?',
+            competition_id: evt?.competition?.id ?? '', event_key: evt?.event_key ?? '',
+            event_name: event?.name ?? '?', event_icon: event?.icon ?? '?',
+            round_number: s.round?.round_number ?? 1, solve_number: s.solve_number,
+            time_ms: s.penalty === 'DNF' || s.penalty === 'DNS' ? null :
+              s.penalty === '+2' && s.time_ms !== null ? s.time_ms + 2000 : s.time_ms,
+            penalty: s.penalty, submitted_at: s.submitted_at };
+        }));
       }
-      setHistory(hist);
-
-      // Build PB stats per event
-      const solvesByEvent = new Map<string, (number | null)[]>();
-      for (const s of allSolves as any[]) {
-        const key = s.round?.competition_event?.event_key;
-        if (!key) continue;
-        if (!solvesByEvent.has(key)) solvesByEvent.set(key, []);
-        const effectiveMs = s.penalty === 'DNF' ? null : s.penalty === '+2' && s.time_ms !== null ? s.time_ms + 2000 : s.time_ms;
-        solvesByEvent.get(key)!.push(effectiveMs);
-      }
-
-      const pbRecords: PBRecord[] = [];
-      for (const [key, times] of solvesByEvent) {
-        const wca = WCA_EVENTS.find(e => e.key === key);
-        if (!wca) continue;
-        const fmt = wca.format as 'average' | 'mean';
-        const chunkSize = fmt === 'mean' ? 3 : 5;
-        let bestSingle: number | null = null;
-        let bestAvg: number | null = null;
-
-        // Best single
-        for (const t of times) {
-          if (t !== null && (bestSingle === null || t < bestSingle)) bestSingle = t;
-        }
-
-        // Best average (walk through solves in chunks — simplified: all solves in order)
-        for (let i = 0; i <= times.length - chunkSize; i++) {
-          const chunk = times.slice(i, i + chunkSize);
-          const result = calculateResult(chunk, fmt);
-          if (result !== null && result !== 'DNF') {
-            const r = result as number;
-            if (bestAvg === null || r < bestAvg) bestAvg = r;
-          }
-        }
-
-        pbRecords.push({
-          event_key: key,
-          event_name: wca.name,
-          event_icon: wca.icon,
-          format: fmt,
-          best_single: bestSingle,
-          best_average: bestAvg,
-          solve_count: times.length,
-        });
-      }
-      pbRecords.sort((a, b) => a.event_name.localeCompare(b.event_name));
-      setPbs(pbRecords);
       setLoading(false);
     };
-    go();
-  }, [router]);
+    void go().catch(error => toast.error(error.message)).finally(() => setLoading(false));
+  }, [router, supabase]);
 
   const handleSave = async () => {
     if (!profile?.username) {
@@ -168,20 +118,15 @@ export default function ProfilePage() {
       return;
     }
     setSaving(true);
-    const { error } = await supabase
-      .from('profiles')
-      .upsert({
-        id: user.id,
-        username: profile.username,
-        display_name: displayName,
-        wca_id: wcaId || null,
-        notify_round_start: notifyRoundStart,
-        notify_advancement: notifyAdvancement,
-        notify_pb_beaten: notifyPbBeaten,
-      });
-    if (error) { toast.error(error.message); }
-    else { toast.success('Profile saved!'); }
-    setSaving(false);
+    try {
+      const { error } = await supabase.from('profiles').update({
+        display_name: displayName.trim(), wca_id: wcaId.trim() || null,
+        notify_round_start: notifyRoundStart, notify_advancement: notifyAdvancement, notify_pb_beaten: notifyPbBeaten,
+      }).eq('id', user!.id).select('id').single();
+      if (error) throw new Error(error.message);
+      toast.success('Profile saved!');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not save profile'); }
+    finally { setSaving(false); }
   };
 
   if (loading) return (
@@ -217,7 +162,7 @@ export default function ProfilePage() {
       <Tabs defaultValue="pbs">
         <TabsList className="mb-6">
           <TabsTrigger value="pbs" className="gap-2"><Trophy className="h-4 w-4" /> Personal Bests</TabsTrigger>
-          <TabsTrigger value="history" className="gap-2"><History className="h-4 w-4" /> Solve History</TabsTrigger>
+          <TabsTrigger value="history" className="gap-2"><History className="h-4 w-4" /> Recent Solves</TabsTrigger>
           <TabsTrigger value="settings" className="gap-2"><Bell className="h-4 w-4" /> Settings</TabsTrigger>
         </TabsList>
 
@@ -233,7 +178,7 @@ export default function ProfilePage() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               {pbs.map(pb => (
-                <Card key={pb.event_key}>
+                <Card key={`${pb.event_key}-${pb.format}`}>
                   <CardHeader className="pb-2">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <span className="text-xl">{pb.event_icon}</span> {pb.event_name}

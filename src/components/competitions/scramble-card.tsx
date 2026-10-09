@@ -22,6 +22,7 @@ export function ScrambleCard({ eventKey, scramble, label, compact = false }: Scr
     if (!host) return;
 
     host.replaceChildren();
+    // Reset external widget failure when rebuilding it for a different scramble.
     setVisualizationFailed(false);
 
     try {
@@ -42,6 +43,8 @@ export function ScrambleCard({ eventKey, scramble, label, compact = false }: Scr
       }
     } catch (error) {
       console.error('Failed to render scramble visualization', error);
+      // The external renderer can fail synchronously during construction.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (!cancelled) setVisualizationFailed(true);
     }
 

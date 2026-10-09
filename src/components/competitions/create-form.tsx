@@ -14,11 +14,9 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { createClient } from '@/lib/supabase/client';
-import { configureCompetitionVisibilityAction } from '@/actions/competitionPrivacy';
 import { WCA_EVENTS, type WcaEventKey } from '@/lib/wca-events';
 import {
   applyEventSelection,
-  defaultFormatForEvent,
   type EventFormat,
   type SelectedEvent,
 } from '@/lib/event-selection';
@@ -119,81 +117,22 @@ export function CreateCompetitionForm() {
       const generateScrambles = (document.getElementById('generate-scrambles') as HTMLInputElement)?.checked ?? true;
       const allowSpectators = (document.getElementById('allow-spectators') as HTMLInputElement)?.checked ?? false;
       const requireVerified = (document.getElementById('require-verified') as HTMLInputElement)?.checked ?? false;
-      const { data: comp, error: compError } = await supabase
-        .from('competitions')
-        .insert({
-          name: data.name,
-          description: data.description || '',
-          created_by: user.id,
-          competition_type: competitionType,
-          generate_scrambles: competitionType === 'head_to_head' ? true : generateScrambles,
-          allow_spectators: allowSpectators,
-          require_verified_solves: requireVerified,
-          // Always insert as public; configure_competition_visibility performs the private transition
-          // so the password trigger and secrets row stay consistent.
-          visibility: 'public',
+      const { data: comp, error: compError } = await supabase.rpc('create_competition', {
+        p_details: {
+          name: data.name, description: data.description || '', competition_type: competitionType,
+          generate_scrambles: generateScrambles, allow_spectators: allowSpectators,
+          require_verified_solves: requireVerified, visibility,
           starts_at: startsAt ? new Date(startsAt).toISOString() : null,
           ends_at: endsAt ? new Date(endsAt).toISOString() : null,
-        })
-        .select('id, name, visibility, competition_type')
-        .single();
-
+        },
+        p_events: selectedEvents,
+        p_password: visibility === 'private' ? competitionPassword.trim() : null,
+      });
       if (compError) throw compError;
-
-      if (visibility === 'private') {
-        const privacy = await configureCompetitionVisibilityAction(
-          comp.id,
-          'private',
-          competitionPassword.trim(),
-        );
-        if (!privacy.success) {
-          await supabase.from('competitions').delete().eq('id', comp.id);
-          throw new Error(privacy.error);
-        }
-      }
-
-      const eventInserts = selectedEvents.map(evt => ({
-        competition_id: comp.id,
-        event_key: evt.key,
-        round_count: evt.roundCount,
-        event_format: evt.format,
-      }));
-
-      const { error: eventsError } = await supabase.from('competition_events').insert(eventInserts);
-      if (eventsError) throw eventsError;
-
-      const { data: compEvents, error: fetchEventsError } = await supabase
-        .from('competition_events')
-        .select('id, round_count, event_format')
-        .eq('competition_id', comp.id);
-
-      if (fetchEventsError) throw fetchEventsError;
-
-      const roundInserts: {
-        competition_event_id: string;
-        round_number: number;
-        advance_count: null;
-        round_format: EventFormat;
-      }[] = [];
-
-      for (const ce of (compEvents ?? [])) {
-        const roundFormat = (ce.event_format === 'mean' ? 'mean' : 'average') as EventFormat;
-        for (let r = 1; r <= ce.round_count; r++) {
-          roundInserts.push({
-            competition_event_id: ce.id,
-            round_number: r,
-            advance_count: null,
-            round_format: roundFormat,
-          });
-        }
-      }
-      if (roundInserts.length > 0) {
-        const { error: roundsError } = await supabase.from('rounds').insert(roundInserts);
-        if (roundsError) throw roundsError;
-      }
+      if (comp?.success !== true) throw new Error(comp?.error ?? 'Failed to create competition');
 
       toast.success('Competition created!');
-      if (comp.competition_type === 'head_to_head') {
+      if (competitionType === 'head_to_head') {
         router.push(`/competitions/${comp.id}/setup`);
       } else {
         router.push(`/competitions/${comp.id}`);
@@ -409,7 +348,7 @@ export function CreateCompetitionForm() {
               </div>
             )}
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {WCA_EVENTS.map(event => {
+              {WCA_EVENTS.filter(e => !['333fm', '333mbf'].includes(e.key)).map(event => {
                 const selected = selectedEvents.find(e => e.key === event.key);
                 const isSelected = !!selected;
                 return (

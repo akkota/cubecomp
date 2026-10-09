@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { createClient } from '@/lib/supabase/client';
 import { deriveCompetitionStatus } from '@/lib/competition-status';
 import { PlusCircle, Trophy, Calendar, ArrowRight, CuboidIcon as CubeIcon, Shield, UserCheck, Play, CheckCircle2, Lock } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Competition } from '@/types/database';
 
 const STATUS_VARIANTS: Record<string, 'default'|'destructive'|'secondary'> = { upcoming:'default',ongoing:'destructive',completed:'secondary' };
@@ -122,7 +123,7 @@ export default function DashboardPage() {
       const { data: adminRows } = await supabase
         .from('competition_admins').select('competition_id').eq('user_id', u.id);
       const adminCompIds = (adminRows ?? []).map(r => r.competition_id);
-      let adminList: any[] = [];
+      let adminList: Competition[] = [];
       if (adminCompIds.length > 0) {
         const { data: adComps } = await supabase
           .from('competitions').select('*').in('id', adminCompIds).order('created_at', { ascending: false });
@@ -133,7 +134,7 @@ export default function DashboardPage() {
       const { data: competitorRows } = await supabase
         .from('competitors').select('competition_id').eq('user_id', u.id);
       const compCompIds = (competitorRows ?? []).map(r => r.competition_id);
-      let competingList: any[] = [];
+      let competingList: Competition[] = [];
       if (compCompIds.length > 0) {
         const { data: coComps } = await supabase
           .from('competitions').select('*').in('id', compCompIds).order('created_at', { ascending: false });
@@ -157,7 +158,11 @@ export default function DashboardPage() {
         if (evt) { const entry = roundsByComp.get(evt.competition_id); if (entry) entry.push(r); }
       }
 
-      const attachStatus = (list: any[]) =>
+      const { data: tournaments, error: tournamentError } = await supabase
+        .from('tournaments').select('competition_id,status').in('competition_id', allCompIds);
+      if (tournamentError) throw new Error(tournamentError.message);
+
+      const attachStatus = (list: Competition[]) =>
         list.map(c => ({
           ...c,
           _displayStatus: deriveCompetitionStatus(roundsByComp.get(c.id) ?? [], {
@@ -165,6 +170,7 @@ export default function DashboardPage() {
             startsAt: c.starts_at,
             endsAt: c.ends_at,
             competitionType: c.competition_type,
+            tournamentStatuses: (tournaments ?? []).filter(t => t.competition_id === c.id).map(t => t.status),
           }),
         })) as CompWithStatus[];
 
@@ -176,8 +182,8 @@ export default function DashboardPage() {
       setCompeting(attachStatus(competingList));
       setLoading(false);
     };
-    go();
-  }, [router]);
+    void go().catch(error => toast.error(error.message)).finally(() => setLoading(false));
+  }, [router, supabase]);
 
   if (loading) return (
     <div className="space-y-8">

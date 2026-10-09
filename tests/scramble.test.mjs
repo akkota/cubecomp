@@ -9,6 +9,8 @@ import {
   APP_TO_CUBING_EVENT,
   cubingEventForAppEvent,
   generateScrambles,
+  storeScramblesForRound,
+  generateAndStoreScrambles,
   supportedScrambleEvents,
   validateScrambleBatch,
 } from '../src/lib/scramble.ts';
@@ -111,4 +113,33 @@ test('scramble module configures immediate prefetch for warm sequential generati
   const scrambleLib = readFileSync(join(root, 'src/lib/scramble.ts'), 'utf8');
   assert.match(scrambleLib, /scramblePrefetchLevel:\s*'immediate'/);
   assert.doesNotMatch(scrambleLib, /prioritizeEsbuildWorkaroundForWorkerInstantiation:\s*true/);
+});
+
+function scrambleStore(responses, insertError = null) {
+  let inserts = 0;
+  return {
+    get inserts() { return inserts; },
+    from() { return {
+      select() { return { eq() { return { order() { return Promise.resolve(responses.shift()); } }; } }; },
+      insert() { inserts++; return Promise.resolve({ error: insertError }); },
+    }; },
+  };
+}
+
+test('existing scramble batch must match the expected format without generating or overwriting', async () => {
+  const store = scrambleStore([{ data: [{ scramble: 'R U' }], error: null }]);
+  await assert.rejects(generateAndStoreScrambles('round', '333', 5, store), /Expected 5/);
+  assert.equal(store.inserts, 0);
+});
+
+test('concurrent scramble insertion reuses only a complete winning batch', async () => {
+  const store = scrambleStore([{ data: [], error: null }, { data: [{ scramble: 'F U' }], error: null }], { code: '23505', message: 'duplicate' });
+  await assert.rejects(storeScramblesForRound('round', ['R U', 'L U', 'B U'], store), /Expected 3/);
+  assert.equal(store.inserts, 1);
+});
+
+test('scramble read errors fail closed without generating or inserting', async () => {
+  const store = scrambleStore([{ data: null, error: { message: 'offline' } }]);
+  await assert.rejects(generateAndStoreScrambles('round', '333', 5, store), /offline/);
+  assert.equal(store.inserts, 0);
 });

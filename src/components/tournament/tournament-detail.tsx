@@ -1,47 +1,34 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { createClient } from '@/lib/supabase/client';
+import { fetchAllPages } from '@/lib/pagination';
+import type { Tournament, TournamentMatch } from '@/types/database';
 import { BracketView } from '@/components/tournament/bracket-view';
 import { ScrambleCard } from '@/components/competitions/scramble-card';
 import {
   generateBracketAction, activateTournamentAction, cancelTournamentAction,
-  submitSolveResultAction, adminResolveTieAction,
+  submitSolveResultAction,
   reSolveAction, ensureActiveMatchPlayableAction, makeMatchLiveAction,
 } from '@/actions/tournament';
 import { createClient as createSupabaseClient } from '@/lib/supabase/client';
 import {
-  ArrowLeft, Play, XCircle, CheckCircle2, Trophy, RotateCcw,
+  ArrowLeft, Play, XCircle,
   Swords, Timer, AlertTriangle
 } from 'lucide-react';
 import { formatTime } from '@/lib/wca-events';
-import { effectiveTimeMs } from '@/lib/solve-results';
+
 
 interface DetailProps {
   competitionId: string;
   tournamentId: string;
 }
 
-interface FullMatch {
-  id: string;
-  bracket_type: string;
-  bracket_round: number;
-  match_number: number;
-  competitor1_id: string | null;
-  competitor2_id: string | null;
-  competitor1_sets_won: number;
-  competitor2_sets_won: number;
-  winner_id: string | null;
-  status: string;
-  auto_advance: boolean;
-  next_match_id: string | null;
-  loser_next_match_id: string | null;
-}
+type FullMatch = TournamentMatch;
 
 interface FullSet {
   id: string;
@@ -82,134 +69,98 @@ export function TournamentDetailView({ competitionId, tournamentId }: DetailProp
   const supabase = createSupabaseClient();
   const [undoing, setUndoing] = useState<string | null>(null);
   const [reSolving, setReSolving] = useState<string | null>(null);
-  const [tournament, setTournament] = useState<any>(null);
+  const [tournament, setTournament] = useState<Tournament | null>(null);
   const [participants, setParticipants] = useState<FullParticipant[]>([]);
   const [matches, setMatches] = useState<FullMatch[]>([]);
   const [sets, setSets] = useState<FullSet[]>([]);
   const [solves, setSolves] = useState<FullSolve[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeMatch, setActiveMatch] = useState<FullMatch | null>(null);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
-  const [activeSet, setActiveSet] = useState<FullSet | null>(null);
-  const [activeSolve, setActiveSolve] = useState<FullSolve | null>(null);
-  const [c1Time, setC1Time] = useState('');
-  const [c1Penalty, setC1Penalty] = useState('none');
-  const [c2Time, setC2Time] = useState('');
-  const [c2Penalty, setC2Penalty] = useState('none');
+  const [draft, setDraft] = useState({ solveId: null as string | null, c1Time: '', c1Penalty: 'none', c2Time: '', c2Penalty: 'none' });
   const [submitting, setSubmitting] = useState(false);
   const [makingLive, setMakingLive] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
+  const requestNumber = useRef(0);
   const fetchAll = useCallback(async () => {
-    const { data: t } = await supabase.from('tournaments').select('*').eq('id', tournamentId).single();
-    if (!t) { setLoading(false); return; }
-    setTournament(t);
-
-    const { data: p } = await supabase.from('tournament_participants').select('*')
-      .eq('tournament_id', tournamentId).order('initial_slot');
-    setParticipants(p ?? []);
-
-    const { data: m } = await supabase.from('tournament_matches').select('*')
-      .eq('tournament_id', tournamentId).order('bracket_index');
-    setMatches(m ?? []);
-
-    const mids = (m ?? []).map(mm => mm.id);
-    if (mids.length > 0) {
-      const { data: ss } = await supabase.from('tournament_match_sets').select('*')
-        .in('match_id', mids).order('set_number');
-      setSets(ss ?? []);
-
-      const sids = (ss ?? []).map(s => s.id);
-      if (sids.length > 0) {
-        const { data: sv } = await supabase.from('tournament_match_solves').select('*')
-          .in('set_id', sids).order('solve_number').order('re_solve_attempt');
-        setSolves(sv ?? []);
-      } else {
-        setSolves([]);
-      }
-    } else {
-      setSets([]);
-      setSolves([]);
+    const request = ++requestNumber.current;
+    const { data: t, error } = await supabase.from('tournaments').select('*').eq('id', tournamentId).eq('competition_id', competitionId).single();
+    if (error || !t) throw new Error(error?.message ?? 'Tournament not found');
+    const p = await fetchAllPages((from, to) => supabase.from('tournament_participants').select('*')
+      .eq('tournament_id', tournamentId).order('initial_slot').order('id').range(from, to));
+    const m = await fetchAllPages((from, to) => supabase.from('tournament_matches').select('*')
+      .eq('tournament_id', tournamentId).order('bracket_index').order('id').range(from, to));
+    const ss: FullSet[] = [];
+    const sv: FullSolve[] = [];
+    // Bound IN-list URLs as well as response pages for large brackets.
+    for (let i = 0; i < m.length; i += 100) {
+      ss.push(...await fetchAllPages<FullSet>((from, to) => supabase.from('tournament_match_sets').select('*')
+        .in('match_id', m.slice(i, i + 100).map(match => match.id)).order('id').range(from, to)));
     }
-
-    // Check admin
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: comp } = await supabase.from('competitions').select('created_by').eq('id', competitionId).single();
-      if (comp?.created_by === user.id) setIsAdmin(true);
-      else {
-        const { data: adminRow } = await supabase.from('competition_admins').select('id')
-          .eq('competition_id', competitionId).eq('user_id', user.id).maybeSingle();
-        setIsAdmin(!!adminRow);
-      }
+    for (let i = 0; i < ss.length; i += 100) {
+      sv.push(...await fetchAllPages<FullSolve>((from, to) => supabase.from('tournament_match_solves').select('*')
+        .in('set_id', ss.slice(i, i + 100).map(set => set.id)).order('id').range(from, to)));
     }
-
-    setLoading(false);
-  }, [competitionId, tournamentId]);
-
-  useEffect(() => { fetchAll(); }, [fetchAll]);
-
-  // Keep selection stable across refreshes; prefer live matches when picking a default
-  useEffect(() => {
-    if (matches.length === 0) {
-      setActiveMatch(null);
-      setSelectedMatchId(null);
-      return;
-    }
-
-    const stillSelected = selectedMatchId
-      ? matches.find(m => m.id === selectedMatchId) ?? null
-      : null;
-    if (stillSelected) {
-      setActiveMatch(stillSelected);
-      return;
-    }
-
-    const liveMatches = matches.filter(m => m.status === 'active' && !m.auto_advance);
-    const next =
-      liveMatches[0] ??
-      matches.find(m => m.status === 'pending' && !m.auto_advance && m.competitor1_id && m.competitor2_id) ??
-      matches[0] ??
-      null;
-    setActiveMatch(next);
-    setSelectedMatchId(next?.id ?? null);
-  }, [matches, selectedMatchId]);
+    const { data: admin, error: adminError } = await supabase.rpc('user_is_tournament_admin', { p_tournament_id: tournamentId });
+    if (adminError) throw new Error(adminError.message);
+    if (request !== requestNumber.current) return;
+    setTournament(t); setParticipants(p); setMatches(m);
+    setSets(ss.sort((a, b) => a.set_number - b.set_number));
+    setSolves(sv.sort((a, b) => a.solve_number - b.solve_number || a.re_solve_attempt - b.re_solve_attempt));
+    setIsAdmin(admin === true); setLoading(false);
+  }, [competitionId, tournamentId, supabase]);
 
   useEffect(() => {
-    if (!activeMatch) { setActiveSet(null); setActiveSolve(null); return; }
-    const ms = sets.filter(s => s.match_id === activeMatch.id);
-    const activeSetItem = ms.find(s => s.status === 'active') ?? ms[ms.length - 1] ?? null;
-    setActiveSet(activeSetItem);
-  }, [activeMatch, sets]);
+    const refresh = () => void fetchAll().catch(e => setError(e.message)).finally(() => setLoading(false));
+    const initial = setTimeout(refresh, 0);
+    const interval = setInterval(refresh, 10_000);
+    window.addEventListener('focus', refresh);
+    const channel = supabase.channel(`tournament-${tournamentId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments', filter: `id=eq.${tournamentId}` }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_matches', filter: `tournament_id=eq.${tournamentId}` }, refresh).subscribe();
+    return () => { clearTimeout(initial); clearInterval(interval); window.removeEventListener('focus', refresh); void supabase.removeChannel(channel); };
+  }, [fetchAll, supabase, tournamentId]);
 
-  useEffect(() => {
-    if (!activeSet) { setActiveSolve(null); return; }
-    const svs = solves.filter(s => s.set_id === activeSet.id);
-    // Prefer the newest open attempt; skip superseded rows left by re-solve
-    const open = svs
-      .filter(s => s.status === 'pending' || s.status === 'active' || s.status === 'tied')
-      .sort((a, b) => (b.solve_number - a.solve_number) || (b.re_solve_attempt - a.re_solve_attempt));
-    setActiveSolve(open[0] ?? null);
-  }, [activeSet, solves]);
+  const activeMatch = matches.find(m => m.id === selectedMatchId)
+    ?? matches.find(m => m.status === 'active' && !m.auto_advance)
+    ?? matches.find(m => m.status === 'pending' && !m.auto_advance && m.competitor1_id && m.competitor2_id)
+    ?? matches[0] ?? null;
+  const matchSets = sets.filter(s => s.match_id === activeMatch?.id);
+  const activeSet = matchSets.find(s => s.status === 'active') ?? matchSets.at(-1) ?? null;
+  const activeSolve = solves.filter(s => s.set_id === activeSet?.id && ['pending', 'active', 'tied'].includes(s.status))
+    .sort((a, b) => b.solve_number - a.solve_number || b.re_solve_attempt - a.re_solve_attempt)[0] ?? null;
+
+  // Bind entered values to their attempt, including changes from another admin.
+  const currentDraft = draft.solveId === activeSolve?.id ? draft : { c1Time: '', c1Penalty: 'none', c2Time: '', c2Penalty: 'none' };
+  const { c1Time, c1Penalty, c2Time, c2Penalty } = currentDraft;
+  const editDraft = (field: 'c1Time' | 'c1Penalty' | 'c2Time' | 'c2Penalty', value: string) => {
+    setDraft(previous => ({ ...(previous.solveId === activeSolve?.id ? previous : { c1Time: '', c1Penalty: 'none', c2Time: '', c2Penalty: 'none' }), solveId: activeSolve?.id ?? null, [field]: value }));
+  };
+  const setC1Time = (value: string) => editDraft('c1Time', value);
+  const setC1Penalty = (value: string) => editDraft('c1Penalty', value);
+  const setC2Time = (value: string) => editDraft('c2Time', value);
+  const setC2Penalty = (value: string) => editDraft('c2Penalty', value);
 
   // Backfill set/solve for already-started matches that were activated without them
   useEffect(() => {
     if (!isAdmin || tournament?.status !== 'active' || !activeMatch) return;
     if (activeMatch.auto_advance || activeMatch.status !== 'active') return;
-    if (activeSet && activeSolve) return;
+    if (activeSet && activeSolve && (tournament.scramble_source === 'external' || activeSolve.scramble)) return;
 
     let cancelled = false;
     void (async () => {
       const result = await ensureActiveMatchPlayableAction(tournamentId, activeMatch.id);
-      if (!cancelled && result.success) await fetchAll();
-    })();
+      if (!cancelled) {
+        if (result.success) await fetchAll();
+        else setError(result.error);
+      }
+    })().catch(e => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
-  }, [isAdmin, tournament?.status, activeMatch, activeSet, activeSolve, tournamentId, fetchAll]);
+  }, [isAdmin, tournament?.status, tournament?.scramble_source, activeMatch, activeSet, activeSolve, tournamentId, fetchAll]);
 
-  const selectMatch = (match: FullMatch) => {
+  const selectMatch = (match: Pick<FullMatch, 'id'>) => {
     setSelectedMatchId(match.id);
-    setActiveMatch(match);
     setC1Time('');
     setC1Penalty('none');
     setC2Time('');
@@ -251,17 +202,9 @@ export function TournamentDetailView({ competitionId, tournamentId }: DetailProp
     !!activeMatch.competitor2_id;
 
   const activeSolvesInSet = solves.filter(s => s.set_id === activeSet?.id);
-  const c1Adj = activeSolve ? effectiveTimeMs(
-    Number(c1Time) * 1000 || 0,
-    c1Penalty as any
-  ) : null;
-  const c2Adj = activeSolve ? effectiveTimeMs(
-    Number(c2Time) * 1000 || 0,
-    c2Penalty as any
-  ) : null;
-
   const handleSubmit = async () => {
     if (!activeMatch || !activeSet || !activeSolve) return;
+    if (tournament?.scramble_source === 'generated' && !activeSolve.scramble) { setError('Wait for the scramble before entering results'); return; }
     setSubmitting(true);
     setError('');
 
@@ -465,7 +408,7 @@ export function TournamentDetailView({ competitionId, tournamentId }: DetailProp
               />
             ) : (
               <div className="rounded-md border border-dashed border-border px-3 py-1.5 text-center text-xs text-muted-foreground">
-                No scramble — enter times for both competitors.
+                {tournament.scramble_source === 'generated' ? 'Preparing the next scramble…' : 'Use your external scramble, then enter times for both competitors.'}
               </div>
             )}
 
@@ -537,7 +480,7 @@ export function TournamentDetailView({ competitionId, tournamentId }: DetailProp
               className="w-full disabled:border disabled:border-border disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
               onClick={handleSubmit}
               disabled={
-                submitting ||
+                submitting || (tournament.scramble_source === 'generated' && !activeSolve.scramble) ||
                 ((c1Penalty === 'none' || c1Penalty === '+2') && !c1Time.trim()) ||
                 ((c2Penalty === 'none' || c2Penalty === '+2') && !c2Time.trim())
               }

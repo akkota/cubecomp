@@ -16,7 +16,7 @@ import {
   Calendar, Sparkles, Zap, Search, Clock, CheckCircle2, Play, Lock, Swords
 } from 'lucide-react';
 
-const STATUS_UI: Record<string, { variant: 'default'|'destructive'|'secondary'|'outline'; label: string; icon: any }> = {
+const STATUS_UI: Record<string, { variant: 'default'|'destructive'|'secondary'|'outline'; label: string; icon: typeof Clock }> = {
   upcoming: { variant: 'default', label: 'Upcoming', icon: Clock },
   ongoing: { variant: 'destructive', label: 'Live', icon: Play },
   completed: { variant: 'secondary', label: 'Completed', icon: CheckCircle2 },
@@ -96,7 +96,7 @@ export default function HomePage() {
       setLoading(false);
     };
     fetchAll();
-  }, []);
+  }, [supabase]);
 
   // Filter by search query (case-insensitive)
   const filtered = useMemo(() => {

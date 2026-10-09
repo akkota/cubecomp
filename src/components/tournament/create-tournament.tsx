@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, type ComponentType } from 'react';
+import { useState, useEffect, useCallback, useMemo, type ComponentType } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import {
   generateBracketAction,
 } from '@/actions/tournament';
 import { registerForCompetitionAction } from '@/actions/competitionPrivacy';
+import { fetchAllPages } from '@/lib/pagination';
 import { WCA_EVENTS } from '@/lib/wca-events';
 import { toast } from 'sonner';
 import {
@@ -116,6 +117,8 @@ export function hasTournamentWizardDraft(competitionId: string): boolean {
   return Boolean(draft.name?.trim() || draft.step > 0 || draft.tournamentId);
 }
 
+type WizardCompetitor = { id: string; user_id: string; competition_id: string; profile: { username: string; display_name: string | null } };
+
 export function CreateTournamentWizard({ competitionId }: { competitionId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -125,7 +128,7 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
   const [draftReady, setDraftReady] = useState(false);
   const [step, setStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
-  const [competitors, setCompetitors] = useState<any[]>([]);
+  const [competitors, setCompetitors] = useState<WizardCompetitor[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [qualAverages, setQualAverages] = useState<Record<string, string>>({});
   const [tournamentId, setTournamentId] = useState<string | null>(null);
@@ -143,7 +146,6 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
   const [scrambleSource, setScrambleSource] = useState<'generated' | 'external'>('generated');
   const [eventKey, setEventKey] = useState('333');
 
-  const [preview, setPreview] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
   // Only competition admins may use this wizard (defense in depth with server page guard)
@@ -199,7 +201,6 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
         setSelected([]);
         setQualAverages({});
         setTournamentId(null);
-        setPreview(null);
         setError('');
         setDraftReady(true);
         router.replace(`/competitions/${competitionId}/tournaments/new`);
@@ -207,14 +208,23 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
       }
 
       const loadTournament = async (tournamentIdToLoad: string) => {
-        const { data: existing } = await client
+        const { data: existing, error: tournamentError } = await client
           .from('tournaments')
           .select('id, name, tournament_type, seeding_type, match_format, scramble_source, event_key, status')
           .eq('id', tournamentIdToLoad)
           .eq('competition_id', competitionId)
           .maybeSingle();
 
+        if (tournamentError) throw new Error(tournamentError.message);
         if (!existing || existing.status !== 'draft') return false;
+
+        // Restore the entire roster before exposing or persisting editable state.
+        const parts = await fetchAllPages<{ competitor_id: string; qualifying_average: number | null }>(
+          (from, to) => client.from('tournament_participants')
+            .select('competitor_id, qualifying_average')
+            .eq('tournament_id', existing.id)
+            .order('initial_slot').order('id').range(from, to),
+        );
 
         setTournamentId(existing.id);
         setName(existing.name ?? '');
@@ -224,13 +234,7 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
         setScrambleSource(existing.scramble_source === 'external' ? 'external' : 'generated');
         if (existing.event_key) setEventKey(existing.event_key);
 
-        const { data: parts } = await client
-          .from('tournament_participants')
-          .select('competitor_id, qualifying_average')
-          .eq('tournament_id', existing.id)
-          .order('initial_slot');
-
-        if (parts && parts.length > 0) {
+        if (parts.length > 0) {
           setSelected(parts.map(p => p.competitor_id));
           const avgs: Record<string, string> = {};
           for (const p of parts) {
@@ -289,18 +293,14 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
       setDraftReady(true);
     };
 
-    void restore();
+    void restore().catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : 'Unable to restore tournament setup.');
+    });
   }, [authChecked, competitionId, forceFresh, resumeId, router]);
 
-  // Rebuild bracket preview after draft restore / selection changes
-  useEffect(() => {
-    if (!draftReady || selected.length < 2) return;
-    setPreview(generateBracket({
-      participantCount: selected.length,
-      tournamentType,
-      seedingType,
-    }));
-  }, [draftReady, selected.length, tournamentType, seedingType]);
+  const preview = useMemo(() => draftReady && selected.length >= 2
+    ? generateBracket({ participantCount: selected.length, tournamentType, seedingType }) : null,
+    [draftReady, selected.length, tournamentType, seedingType]);
 
   // Persist incomplete wizard so leaving to invite people (or refresh) doesn't wipe progress
   useEffect(() => {
@@ -355,27 +355,18 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
     setSelected([]);
     setQualAverages({});
     setTournamentId(null);
-    setPreview(null);
     setError('');
   };
 
   const loadCompetitors = useCallback(async () => {
     const client = createClient();
-    const { data } = await client
-      .from('competitors')
-      .select('id, user_id, competition_id')
-      .eq('competition_id', competitionId);
-
-    if (!data || data.length === 0) {
-      setCompetitors([]);
-      return;
+    const data = await fetchAllPages<Pick<WizardCompetitor, 'id' | 'user_id' | 'competition_id'>>((from, to) => client
+      .from('competitors').select('id, user_id, competition_id').eq('competition_id', competitionId).order('id').range(from, to));
+    const profiles: Array<{ id: string; username: string; display_name: string | null }> = [];
+    for (let i = 0; i < data.length; i += 100) {
+      profiles.push(...await fetchAllPages((from, to) => client.from('profiles').select('id, display_name, username')
+        .in('id', data.slice(i, i + 100).map(c => c.user_id)).order('id').range(from, to)));
     }
-
-    const userIds = data.map(c => c.user_id);
-    const { data: profiles } = await client
-      .from('profiles')
-      .select('id, display_name, username')
-      .in('id', userIds);
 
     const profileMap = new Map((profiles || []).map(p => [p.id, p]));
     setCompetitors(data.map(c => ({
@@ -385,7 +376,7 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
   }, [competitionId]);
 
   useEffect(() => {
-    void loadCompetitors();
+    const timer = setTimeout(() => void loadCompetitors().catch(e => setError(e.message)), 0);
 
     const client = createClient();
     client.from('competition_events').select('event_key')
@@ -394,6 +385,7 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
       .then(({ data }) => {
         if (data?.[0]?.event_key) setEventKey(data[0].event_key);
       });
+    return () => clearTimeout(timer);
   }, [competitionId, loadCompetitors]);
 
   const toggleSelected = (id: string) => {
@@ -453,7 +445,7 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
       })
     : selected;
 
-  const previewMatches = preview?.matches?.map((m: any, i: number) => ({
+  const previewMatches = preview?.matches?.map((m, i: number) => ({
     id: `preview-${i}`,
     bracket_type: m.bracketType,
     bracket_round: m.bracketRound,
@@ -469,7 +461,7 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
           ? `seed-${m.slot2Seed}`
           : null)
       : null,
-    status: m.isBye ? 'completed' : 'pending',
+    status: m.isBye ? 'completed' as const : 'pending' as const,
     auto_advance: m.isBye,
   })) ?? [];
 
@@ -483,16 +475,6 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
         : `Seed ${i + 1}`,
     };
   });
-
-  const updatePreview = () => {
-    if (selected.length < 2) return;
-    const def = generateBracket({
-      participantCount: selected.length,
-      tournamentType,
-      seedingType,
-    });
-    setPreview(def);
-  };
 
   const handleCreate = async () => {
     setError('');
@@ -529,7 +511,6 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
       const pResult = await setParticipantsAction(id, selected, qualAvgs);
       if (!pResult.success) { setError(pResult.error); return; }
 
-      updatePreview();
       goToStep(3);
     } finally { setGenerating(false); }
   };
@@ -558,6 +539,14 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
   };
 
   if (!authChecked || !draftReady) {
+    if (error) {
+      return (
+        <div className="mx-auto max-w-3xl space-y-3">
+          <p role="alert" className="text-sm text-destructive">{error}</p>
+          <Button onClick={() => window.location.reload()}>Retry loading setup</Button>
+        </div>
+      );
+    }
     return <div className="mx-auto h-64 max-w-3xl animate-pulse rounded-lg bg-surface-hover" />;
   }
 
@@ -894,7 +883,6 @@ export function CreateTournamentWizard({ competitionId }: { competitionId: strin
                     );
                     return;
                   }
-                  if (seedingType === 'unseeded') updatePreview();
                   goToStep(2);
                 }}
                 disabled={selected.length < 2}

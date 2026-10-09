@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,8 +23,10 @@ import {
   configureCompetitionVisibilityAction,
   registerForCompetitionAction,
 } from "@/actions/competitionPrivacy";
-import { formatTime } from "@/lib/wca-events";
-import type { AdvancementResult } from "@/types/advancement";
+import type { Competition, CompetitionEvent, Round, Scramble, Profile, RoundSubmission, Competitor } from "@/types/database";
+import { fetchAllPages } from "@/lib/pagination";
+type AdminRow = { id: string; user_id: string; user: Pick<Profile, 'id' | 'username' | 'display_name'> };
+type ReviewRow = RoundSubmission & { competitor: Competitor & { user: Pick<Profile, 'id' | 'username' | 'display_name'> }; round: Round & { competition_event: Pick<CompetitionEvent, 'event_key'> } };
 import { toast } from "sonner";
 import {
   Select,
@@ -65,10 +67,10 @@ const V: Record<string, "default" | "destructive" | "secondary" | "outline"> = {
 
 export default function CompetitionAdminPage() {
   const { id } = useParams<{ id: string }>();
-  const [competition, setCompetition] = useState<any>(null);
-  const [events, setEvents] = useState<any[]>([]);
-  const [allRounds, setAllRounds] = useState<any[]>([]);
-  const [scrambles, setScrambles] = useState<Record<string, any[]>>({});
+  const [competition, setCompetition] = useState<Competition | null>(null);
+  const [events, setEvents] = useState<CompetitionEvent[]>([]);
+  const [allRounds, setAllRounds] = useState<Round[]>([]);
+  const [scrambles, setScrambles] = useState<Record<string, Scramble[]>>({});
   const [isOwner, setIsOwner] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -85,14 +87,14 @@ export default function CompetitionAdminPage() {
   const supabase = createClient();
 
   // ── Admin management state ──
-  const [admins, setAdmins] = useState<any[]>([]);
+  const [admins, setAdmins] = useState<AdminRow[]>([]);
   const [adminSearch, setAdminSearch] = useState("");
-  const [adminResults, setAdminResults] = useState<any[]>([]);
+  const [adminResults, setAdminResults] = useState<Pick<Profile, 'id' | 'username' | 'display_name'>[]>([]);
   const [addingAdmin, setAddingAdmin] = useState(false);
   const [searchingAdmin, setSearchingAdmin] = useState(false);
 
   // ── Verification queue state ──
-  const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
+  const [pendingSubmissions, setPendingSubmissions] = useState<ReviewRow[]>([]);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [rejectText, setRejectText] = useState<Record<string, string>>({});
 
@@ -104,7 +106,7 @@ export default function CompetitionAdminPage() {
   const [savingVisibility, setSavingVisibility] = useState(false);
 
   // ── Initial data fetch ──
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -169,7 +171,7 @@ export default function CompetitionAdminPage() {
           .select("*")
           .in("round_id", rids)
           .order("scramble_number");
-        const g: Record<string, any[]> = {};
+        const g: Record<string, Scramble[]> = {};
         for (const sc of s ?? []) {
           if (!g[sc.round_id]) g[sc.round_id] = [];
           g[sc.round_id].push(sc);
@@ -178,7 +180,7 @@ export default function CompetitionAdminPage() {
       }
     }
     setLoading(false);
-  };
+  }, [id, router, supabase, setEditVisibility, setEditPassword]);
 
   // ── Admin list fetch ──
   const fetchAdmins = async () => {
@@ -186,7 +188,7 @@ export default function CompetitionAdminPage() {
       .from("competition_admins")
       .select("*,user:user_id(id,username,display_name)")
       .eq("competition_id", id);
-    setAdmins(data ?? []);
+    setAdmins((data ?? []) as unknown as AdminRow[]);
   };
 
   // ── Verification queue fetch ──
@@ -200,26 +202,27 @@ export default function CompetitionAdminPage() {
     if (!rds) return;
     const roundIds = rds.map((r) => r.id);
     if (roundIds.length === 0) return;
-    const { data: subs } = await supabase
+    const subs = await fetchAllPages((from, to) => supabase
       .from("round_submissions")
       .select(
         "*,competitor:competitor_id(*,user:user_id(id,username,display_name)),round:round_id(*,competition_event:competition_event_id(event_key))",
       )
       .in("round_id", roundIds)
       .not("video_url", "is", null)
-      .order("created_at", { ascending: false });
-    setPendingSubmissions(subs ?? []);
+      .order("created_at", { ascending: false }).order("id").range(from, to));
+    setPendingSubmissions(subs as unknown as ReviewRow[]);
   };
 
   useEffect(() => {
-    fetchData();
-  }, [id]);
+    const timer = setTimeout(() => void fetchData().catch(e => toast.error(e.message)), 0);
+    return () => clearTimeout(timer);
+  }, [fetchData]);
 
   const grf = (eid: string) =>
     allRounds.filter((r) => r.competition_event_id === eid);
   const we = (k: string) => WCA_EVENTS.find((e) => e.key === k);
 
-  const hgs = async (r: any, ek: string, sc: number) => {
+  const hgs = async (r: Round, ek: string, sc: number) => {
     if (genRef.current.has(r.id)) return;
     genRef.current.add(r.id);
     setGenerating((p) => ({ ...p, [r.id]: true }));
@@ -234,8 +237,8 @@ export default function CompetitionAdminPage() {
         .order("scramble_number");
       setScrambles((p) => ({ ...p, [r.id]: f ?? [] }));
       toast.success(`Scrambles generated`);
-    } catch (e: any) {
-      toast.error(e.message ?? "Failed to generate scrambles");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to generate scrambles");
     } finally {
       setGenerating((p) => ({ ...p, [r.id]: false }));
       genRef.current.delete(r.id);
@@ -245,19 +248,20 @@ export default function CompetitionAdminPage() {
   const updateRoundField = async (
     roundId: string,
     field: string,
-    value: any,
+    value: string | number | null,
   ) => {
     const { error } = await supabase
       .from("rounds")
       .update({ [field]: value })
       .eq("id", roundId);
+    if (error) { toast.error(error.message); return; }
     if (!error)
       setAllRounds((p) =>
         p.map((r) => (r.id === roundId ? { ...r, [field]: value } : r)),
       );
   };
 
-  const syncCompStatus = async (rounds: any[]) => {
+  const syncCompStatus = async (rounds: Array<{ status: string }>) => {
     const { data: eff } = await supabase.rpc("refresh_competition_status", { comp_id: id });
     const status =
       (typeof eff === "string" && eff) ||
@@ -267,11 +271,11 @@ export default function CompetitionAdminPage() {
         endsAt: competition?.ends_at,
         competitionType: competition?.competition_type,
       });
-    setCompetition((prev: any) =>
+    setCompetition((prev) =>
       prev
         ? {
             ...prev,
-            status: status === "cancelled" ? "cancelled" : status,
+            status: status as Competition["status"],
             ends_at:
               status === "completed" && !prev.ends_at
                 ? new Date().toISOString()
@@ -293,7 +297,7 @@ export default function CompetitionAdminPage() {
       toast.error(error.message);
     } else {
       toast.success("Round started!");
-      const up = allRounds.map((r) =>
+      const up: Round[] = allRounds.map((r) =>
         r.id === rid
           ? { ...r, status: "active", started_at: new Date().toISOString() }
           : r,
@@ -337,7 +341,7 @@ export default function CompetitionAdminPage() {
       toast.error(error.message);
     } else {
       toast.success("Round ended!");
-      const up = allRounds.map((r) =>
+      const up: Round[] = allRounds.map((r) =>
         r.id === rid
           ? { ...r, status: "completed", ended_at: new Date().toISOString() }
           : r,
@@ -349,7 +353,7 @@ export default function CompetitionAdminPage() {
     endRef.current = null;
   };
 
-  const hca = async (r: any) => {
+  const hca = async (r: Round) => {
     setCalculating((p) => ({ ...p, [r.id]: true }));
     try {
       const res = await calculateAdvancementAction(r.id);
@@ -358,8 +362,8 @@ export default function CompetitionAdminPage() {
         toast.success(`Already calculated — ${res.advanced} advanced`);
       else if (res.advanced === 0) toast.warning(`No one advanced`);
       else toast.success(`${res.advanced} of ${res.total} advanced`);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Operation failed");
     } finally {
       setCalculating((p) => ({ ...p, [r.id]: false }));
     }
@@ -416,7 +420,7 @@ export default function CompetitionAdminPage() {
         toast.error(result.error);
         return;
       }
-      setCompetition((prev: any) =>
+      setCompetition((prev) =>
         prev
           ? { ...prev, visibility: result.visibility ?? editVisibility }
           : prev,
@@ -484,45 +488,20 @@ export default function CompetitionAdminPage() {
   };
 
   // ── Verification actions ──
-  const verifySubmission = async (subId: string) => {
+  const reviewSubmission = async (subId: string, status: 'verified' | 'rejected') => {
     setVerifyingId(subId);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const { error } = await supabase
-      .from("round_submissions")
-      .update({
-        verification_status: "verified",
-        verified_by: user?.id,
-        verified_at: new Date().toISOString(),
-        rejected_reason: null,
-      })
-      .eq("id", subId);
-    if (error) toast.error(error.message);
-    else {
-      toast.success("Verified!");
+    try {
+      const { data, error } = await supabase.rpc('review_round_evidence', {
+        p_submission_id: subId, p_status: status, p_reason: rejectText[subId]?.trim() || null,
+      });
+      if (error || data?.success !== true) throw new Error(error?.message ?? data?.error ?? 'Review failed');
+      toast.success(status === 'verified' ? 'Verified!' : 'Rejected');
       await fetchVerificationQueue();
-    }
-    setVerifyingId(null);
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Review failed'); }
+    finally { setVerifyingId(null); }
   };
-
-  const rejectSubmission = async (subId: string) => {
-    const reason = rejectText[subId]?.trim();
-    setVerifyingId(subId);
-    const { error } = await supabase
-      .from("round_submissions")
-      .update({
-        verification_status: "rejected",
-        rejected_reason: reason || "No reason given",
-      })
-      .eq("id", subId);
-    if (error) toast.error(error.message);
-    else {
-      toast.success("Rejected");
-      await fetchVerificationQueue();
-    }
-    setVerifyingId(null);
-  };
+  const verifySubmission = (id: string) => reviewSubmission(id, 'verified');
+  const rejectSubmission = (id: string) => reviewSubmission(id, 'rejected');
 
   if (loading)
     return (
@@ -623,7 +602,6 @@ export default function CompetitionAdminPage() {
             {events.map((ce) => {
               const ei = we(ce.event_key);
               const ers = grf(ce.id);
-              const sc = ei?.solveCount ?? 5;
               return (
                 <Card key={ce.id} className="overflow-hidden">
                   <CardHeader className="border-b border-border bg-muted pb-3">
@@ -742,6 +720,7 @@ export default function CompetitionAdminPage() {
                                   Format:
                                 </span>
                                 <Select
+                                  disabled={hs}
                                   value={rf}
                                   onValueChange={(v) =>
                                     updateRoundField(r.id, "round_format", v)

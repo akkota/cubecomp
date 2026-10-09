@@ -39,9 +39,6 @@ export function TournamentList({
 
   useEffect(() => {
     const supabase = createClient();
-    if (isAdmin) {
-      setWizardDraft(hasTournamentWizardDraft(competitionId));
-    }
 
     const fetchTournament = async () => {
       const { data } = await supabase
@@ -53,6 +50,7 @@ export function TournamentList({
         .limit(1)
         .maybeSingle();
 
+      setWizardDraft(isAdmin && hasTournamentWizardDraft(competitionId));
       setTournament(data ?? null);
       setLoading(false);
     };
